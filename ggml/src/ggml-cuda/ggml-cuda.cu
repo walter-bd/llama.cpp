@@ -42,6 +42,7 @@
 #include "ggml-cuda/rope.cuh"
 #include "ggml-cuda/roll.cuh"
 #include "ggml-cuda/scale.cuh"
+#include "ggml-cuda/sparse-mul-mat.cuh"
 #include "ggml-cuda/snake.cuh"
 #include "ggml-cuda/softcap.cuh"
 #include "ggml-cuda/softmax.cuh"
@@ -2213,6 +2214,9 @@ static bool ggml_cuda_compute_forward(ggml_backend_cuda_context & ctx, struct gg
             break;
         case GGML_OP_MUL_MAT:
             ggml_cuda_mul_mat(ctx, dst->src[0], dst->src[1], dst);
+            break;
+        case GGML_OP_SPARSE_MUL_MAT:
+            ggml_cuda_op_sparse_mul_mat(ctx, dst);
             break;
         case GGML_OP_MUL_MAT_ID:
             ggml_cuda_mul_mat_id(ctx, dst);
@@ -4845,6 +4849,17 @@ static bool ggml_backend_cuda_device_supports_op(ggml_backend_dev_t dev, const g
                         return false;
                 }
             } break;
+        case GGML_OP_SPARSE_MUL_MAT:
+            return
+                op->type == GGML_TYPE_F32 &&
+                op->src[0]->type == GGML_TYPE_I32 &&
+                op->src[1]->type == GGML_TYPE_I16 &&
+                op->src[2]->type == GGML_TYPE_F16 &&
+                (op->src[3]->type == GGML_TYPE_F32 || op->src[3]->type == GGML_TYPE_F16) &&
+                op->src[0]->nb[0] == ggml_element_size(op->src[0]) &&
+                op->src[1]->nb[0] == ggml_element_size(op->src[1]) &&
+                op->src[2]->nb[0] == ggml_element_size(op->src[2]) &&
+                op->src[3]->nb[0] == ggml_element_size(op->src[3]);
         case GGML_OP_OUT_PROD:
             return op->type == GGML_TYPE_F32 && op->src[0]->type == GGML_TYPE_F32 && op->src[1]->type == GGML_TYPE_F32;
         case GGML_OP_GET_ROWS:
@@ -5187,6 +5202,8 @@ static int64_t get_op_batch_size(const ggml_tensor * op) {
         case GGML_OP_GET_ROWS:
             return 0;
         case GGML_OP_MUL_MAT:
+            return op->ne[1];
+        case GGML_OP_SPARSE_MUL_MAT:
             return op->ne[1];
         case GGML_OP_MUL_MAT_ID:
         case GGML_OP_ROPE:

@@ -29,6 +29,7 @@ class llama_kv_cache_iswa_context;
 class llama_memory_recurrent_context;
 class llama_memory_hybrid_context;
 class llama_memory_hybrid_iswa_context;
+class llama_sparse_residual;
 
 // certain models (typically multi-modal) can produce different types of graphs
 enum llm_graph_type {
@@ -685,6 +686,7 @@ struct llm_graph_params {
 
     const llama_adapter_cvec     * cvec;
     const llama_adapter_loras    * loras;
+    const llama_sparse_residual  * sparse_residual;
     const llama_memory_context_i * mctx;
     const llama_cross            * cross;
 
@@ -781,6 +783,7 @@ struct llm_graph_params {
             gtype == other.gtype &&
             cvec  == other.cvec  &&
             loras == other.loras &&
+            sparse_residual == other.sparse_residual &&
             cross == other.cross;
     }
 };
@@ -925,6 +928,7 @@ struct llm_graph_context {
 
     const llama_adapter_cvec     * cvec;
     const llama_adapter_loras    * loras;
+    const llama_sparse_residual  * sparse_residual;
     const llama_memory_context_i * mctx;
     const llama_cross            * cross;
 

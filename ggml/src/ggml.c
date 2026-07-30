@@ -1098,9 +1098,11 @@ static const char * GGML_OP_NAME[GGML_OP_COUNT] = {
     "OPT_STEP_SGD",
 
     "GLU",
+
+    "SPARSE_MUL_MAT",
 };
 
-static_assert(GGML_OP_COUNT == 101, "GGML_OP_COUNT != 101");
+static_assert(GGML_OP_COUNT == 102, "GGML_OP_COUNT != 102");
 
 static const char * GGML_OP_SYMBOL[GGML_OP_COUNT] = {
     "none",
@@ -1213,9 +1215,11 @@ static const char * GGML_OP_SYMBOL[GGML_OP_COUNT] = {
     "sgd(x)",
 
     "glu(x)",
+
+    "SX*Y",
 };
 
-static_assert(GGML_OP_COUNT == 101, "GGML_OP_COUNT != 101");
+static_assert(GGML_OP_COUNT == 102, "GGML_OP_COUNT != 102");
 
 static_assert(GGML_OP_POOL_COUNT == 2, "GGML_OP_POOL_COUNT != 2");
 
@@ -3288,6 +3292,34 @@ struct ggml_tensor * ggml_mul_mat(
     result->op     = GGML_OP_MUL_MAT;
     result->src[0] = a;
     result->src[1] = b;
+
+    return result;
+}
+
+struct ggml_tensor * ggml_sparse_mul_mat(
+        struct ggml_context * ctx,
+        struct ggml_tensor  * row_ptr,
+        struct ggml_tensor  * col_idx,
+        struct ggml_tensor  * values,
+        struct ggml_tensor  * b,
+        int64_t               n_rows,
+        int64_t               n_cols) {
+    GGML_ASSERT(row_ptr->type == GGML_TYPE_I32);
+    GGML_ASSERT(col_idx->type == GGML_TYPE_I16);
+    GGML_ASSERT(values->type == GGML_TYPE_F16);
+    GGML_ASSERT(b->type == GGML_TYPE_F32 || b->type == GGML_TYPE_F16);
+    GGML_ASSERT(row_ptr->ne[0] == n_rows + 1);
+    GGML_ASSERT(col_idx->ne[0] == values->ne[0]);
+    GGML_ASSERT(b->ne[0] == n_cols);
+
+    const int64_t ne[4] = { n_rows, b->ne[1], b->ne[2], b->ne[3] };
+    struct ggml_tensor * result = ggml_new_tensor(ctx, GGML_TYPE_F32, 4, ne);
+
+    result->op = GGML_OP_SPARSE_MUL_MAT;
+    result->src[0] = row_ptr;
+    result->src[1] = col_idx;
+    result->src[2] = values;
+    result->src[3] = b;
 
     return result;
 }

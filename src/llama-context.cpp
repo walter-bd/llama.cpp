@@ -9,12 +9,14 @@
 #include "llama-memory.h"
 #include "llama-mmap.h"
 #include "llama-model.h"
+#include "llama-sparse-residual.h"
 #include "llama-ext.h"
 #include "llama.h"
 
 #include <cinttypes>
 #include <cmath>
 #include <cstring>
+#include <cstdlib>
 #include <limits>
 #include <stdexcept>
 #include <string>
@@ -451,6 +453,10 @@ llama_context::llama_context(
 
         if (cparams.pipeline_parallel) {
             LLAMA_LOG_INFO("%s: pipeline parallelism enabled\n", __func__);
+        }
+
+        if (const char * path = std::getenv("LLAMA_SPARSE_RESIDUAL"); path != nullptr && path[0] != '\0') {
+            sparse_residual = llama_sparse_residual::load(path, model);
         }
 
         sched_reserve();
@@ -2428,6 +2434,7 @@ llm_graph_params llama_context::graph_params(
         /*.backend_cpu =*/ backend_cpu,
         /*.cvec        =*/ cvec.get(),
         /*.loras       =*/ loras.get(),
+        /*.sparse_residual =*/ sparse_residual.get(),
         /*.mctx        =*/ mctx,
         /*.cross       =*/ &cross,
         /*.samplers    =*/ sampling.samplers,

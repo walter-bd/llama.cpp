@@ -590,6 +590,9 @@ extern "C" {
 
         GGML_OP_GLU,
 
+        // Appended to preserve all existing operation IDs.
+        GGML_OP_SPARSE_MUL_MAT,
+
         GGML_OP_COUNT,
     };
 
@@ -1429,6 +1432,17 @@ extern "C" {
             struct ggml_context * ctx,
             struct ggml_tensor  * a,
             struct ggml_tensor  * b);
+
+    // CSR sparse matrix multiplication. The sparse matrix has shape
+    // [n_cols, n_rows] in ggml's transposed weight convention.
+    GGML_API struct ggml_tensor * ggml_sparse_mul_mat(
+            struct ggml_context * ctx,
+            struct ggml_tensor  * row_ptr,
+            struct ggml_tensor  * col_idx,
+            struct ggml_tensor  * values,
+            struct ggml_tensor  * b,
+            int64_t               n_rows,
+            int64_t               n_cols);
 
     // change the precision of a matrix multiplication
     // set to GGML_PREC_F32 for higher precision (useful for phi-2)

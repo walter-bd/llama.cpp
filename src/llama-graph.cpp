@@ -12,6 +12,7 @@
 #include "llama-memory-hybrid.h"
 #include "llama-memory-hybrid-iswa.h"
 #include "llama-memory-recurrent.h"
+#include "llama-sparse-residual.h"
 
 #include <cassert>
 #include <cmath>
@@ -1355,6 +1356,7 @@ llm_graph_context::llm_graph_context(const llm_graph_params & params) :
     backend_cpu      (params.backend_cpu),
     cvec             (params.cvec),
     loras            (params.loras),
+    sparse_residual  (params.sparse_residual),
     mctx             (params.mctx),
     cross            (params.cross),
     samplers         (params.samplers),
@@ -1384,6 +1386,20 @@ ggml_tensor * llm_graph_context::build_lora_mm(
           ggml_tensor * cur,
           ggml_tensor * w_s) const {
     ggml_tensor * res = ggml_mul_mat(ctx0, w, cur);
+
+    if (sparse_residual != nullptr) {
+        if (const auto * entry = sparse_residual->get(w)) {
+            ggml_tensor * correction = ggml_sparse_mul_mat(
+                    ctx0,
+                    entry->row_ptr,
+                    entry->col_idx,
+                    entry->values,
+                    cur,
+                    entry->n_rows,
+                    entry->n_cols);
+            res = ggml_add(ctx0, res, correction);
+        }
+    }
 
     if (w_s) {
         res = ggml_mul(ctx0, res, w_s);

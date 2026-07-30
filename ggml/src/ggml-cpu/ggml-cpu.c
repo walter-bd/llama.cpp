@@ -1451,6 +1451,62 @@ UseGgmlGemm2:;
     }
 }
 
+static void ggml_compute_forward_sparse_mul_mat(
+        const struct ggml_compute_params * params,
+              struct ggml_tensor * dst) {
+    const struct ggml_tensor * row_ptr = dst->src[0];
+    const struct ggml_tensor * col_idx = dst->src[1];
+    const struct ggml_tensor * values  = dst->src[2];
+    const struct ggml_tensor * src     = dst->src[3];
+
+    GGML_ASSERT(row_ptr->type == GGML_TYPE_I32);
+    GGML_ASSERT(col_idx->type == GGML_TYPE_I16);
+    GGML_ASSERT(values->type == GGML_TYPE_F16);
+    GGML_ASSERT(src->type == GGML_TYPE_F32 || src->type == GGML_TYPE_F16);
+    GGML_ASSERT(dst->type == GGML_TYPE_F32);
+    GGML_ASSERT(row_ptr->ne[0] == dst->ne[0] + 1);
+    GGML_ASSERT(src->ne[0] > 0);
+
+    const int32_t * rows = (const int32_t *) row_ptr->data;
+    const uint16_t * cols = (const uint16_t *) col_idx->data;
+    const ggml_fp16_t * vals = (const ggml_fp16_t *) values->data;
+
+    const int64_t nr = ggml_nelements(dst);
+    const int64_t dr = (nr + params->nth - 1) / params->nth;
+    const int64_t ir0 = dr * params->ith;
+    const int64_t ir1 = MIN(ir0 + dr, nr);
+
+    for (int64_t ir = ir0; ir < ir1; ++ir) {
+        int64_t rem = ir;
+        const int64_t row = rem % dst->ne[0];
+        rem /= dst->ne[0];
+        const int64_t i1 = rem % dst->ne[1];
+        rem /= dst->ne[1];
+        const int64_t i2 = rem % dst->ne[2];
+        const int64_t i3 = rem / dst->ne[2];
+
+        float sum = 0.0f;
+        for (int32_t p = rows[row]; p < rows[row + 1]; ++p) {
+            const int64_t col = cols[p];
+            const char * xp = (const char *) src->data
+                + col * src->nb[0]
+                + i1 * src->nb[1]
+                + i2 * src->nb[2]
+                + i3 * src->nb[3];
+            const float x = src->type == GGML_TYPE_F32
+                ? *(const float *) xp
+                : GGML_FP16_TO_FP32(*(const ggml_fp16_t *) xp);
+            sum += GGML_FP16_TO_FP32(vals[p]) * x;
+        }
+
+        *(float *) ((char *) dst->data
+            + row * dst->nb[0]
+            + i1 * dst->nb[1]
+            + i2 * dst->nb[2]
+            + i3 * dst->nb[3]) = sum;
+    }
+}
+
 // ggml_compute_forward_mul_mat_id
 
 #define MMID_MATRIX_ROW(row_id, i1) matrix_rows[(row_id)*ids->ne[0]*ids->ne[1] + (i1)]
@@ -1836,6 +1892,10 @@ static void ggml_compute_forward(struct ggml_compute_params * params, struct ggm
         case GGML_OP_MUL_MAT:
             {
                 ggml_compute_forward_mul_mat(params, tensor);
+            } break;
+        case GGML_OP_SPARSE_MUL_MAT:
+            {
+                ggml_compute_forward_sparse_mul_mat(params, tensor);
             } break;
         case GGML_OP_MUL_MAT_ID:
             {
@@ -2328,6 +2388,7 @@ static int ggml_get_n_tasks(struct ggml_tensor * node, int n_threads) {
         case GGML_OP_GROUP_NORM:
         case GGML_OP_CONCAT:
         case GGML_OP_MUL_MAT:
+        case GGML_OP_SPARSE_MUL_MAT:
         case GGML_OP_MUL_MAT_ID:
         case GGML_OP_OUT_PROD:
             {
