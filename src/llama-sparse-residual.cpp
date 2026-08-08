@@ -141,7 +141,7 @@ size_t checked_size_add(size_t lhs, size_t rhs, const char * description) {
     return lhs + rhs;
 }
 
-ggml_backend_buffer_type_t tensor_buft(const ggml_tensor * tensor) {
+ggml_backend_buffer_type_t tensor_data_buft(const ggml_tensor * tensor) {
     if (tensor == nullptr) {
         throw std::runtime_error("sparse residual model tensor is null");
     }
@@ -154,11 +154,27 @@ ggml_backend_buffer_type_t tensor_buft(const ggml_tensor * tensor) {
         throw std::runtime_error("model tensor has no backend buffer: " + std::string(tensor->name));
     }
 
-    ggml_backend_buffer_type_t buft = ggml_backend_buffer_get_type(storage->buffer);
-    if (buft == nullptr) {
+    ggml_backend_buffer_type_t storage_buft = ggml_backend_buffer_get_type(storage->buffer);
+    if (storage_buft == nullptr) {
         throw std::runtime_error("model tensor backend buffer has no type: " + std::string(tensor->name));
     }
-    return buft;
+
+    ggml_backend_dev_t device = ggml_backend_buft_get_device(storage_buft);
+    if (device == nullptr) {
+        if (ggml_backend_buft_is_host(storage_buft)) {
+            return ggml_backend_cpu_buffer_type();
+        }
+        throw std::runtime_error("model tensor backend buffer has no device: " + std::string(tensor->name));
+    }
+
+    // Model weights may use specialized buffer types such as CPU repack. CSR
+    // indices and values are ordinary tensors and must use the device's normal
+    // buffer type; specialized setters assume model-weight metadata and layout.
+    ggml_backend_buffer_type_t data_buft = ggml_backend_dev_buffer_type(device);
+    if (data_buft == nullptr) {
+        throw std::runtime_error("model tensor device has no default buffer type: " + std::string(tensor->name));
+    }
+    return data_buft;
 }
 
 } // namespace
@@ -275,7 +291,7 @@ std::unique_ptr<llama_sparse_residual> llama_sparse_residual::load(
     auto result = std::make_unique<impl>();
     std::map<ggml_backend_buffer_type_t, std::vector<size_t>> groups;
     for (size_t i = 0; i < records.size(); ++i) {
-        groups[tensor_buft(records[i].weight)].push_back(i);
+        groups[tensor_data_buft(records[i].weight)].push_back(i);
     }
 
     for (const auto & [buft, indices] : groups) {
