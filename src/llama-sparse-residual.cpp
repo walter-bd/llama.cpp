@@ -127,7 +127,25 @@ std::string lowercase(std::string value) {
     return value;
 }
 
+size_t checked_size_mul(size_t lhs, size_t rhs, const char * description) {
+    if (rhs != 0 && lhs > std::numeric_limits<size_t>::max() / rhs) {
+        throw std::runtime_error(std::string("sparse residual ") + description + " size overflow");
+    }
+    return lhs * rhs;
+}
+
+size_t checked_size_add(size_t lhs, size_t rhs, const char * description) {
+    if (lhs > std::numeric_limits<size_t>::max() - rhs) {
+        throw std::runtime_error(std::string("sparse residual ") + description + " size overflow");
+    }
+    return lhs + rhs;
+}
+
 ggml_backend_buffer_type_t tensor_buft(const ggml_tensor * tensor) {
+    if (tensor == nullptr) {
+        throw std::runtime_error("sparse residual model tensor is null");
+    }
+
     const ggml_tensor * storage = tensor;
     while (storage != nullptr && storage->buffer == nullptr && storage->view_src != nullptr) {
         storage = storage->view_src;
@@ -135,7 +153,12 @@ ggml_backend_buffer_type_t tensor_buft(const ggml_tensor * tensor) {
     if (storage == nullptr || storage->buffer == nullptr) {
         throw std::runtime_error("model tensor has no backend buffer: " + std::string(tensor->name));
     }
-    return ggml_backend_buffer_get_type(storage->buffer);
+
+    ggml_backend_buffer_type_t buft = ggml_backend_buffer_get_type(storage->buffer);
+    if (buft == nullptr) {
+        throw std::runtime_error("model tensor backend buffer has no type: " + std::string(tensor->name));
+    }
+    return buft;
 }
 
 } // namespace
@@ -256,9 +279,11 @@ std::unique_ptr<llama_sparse_residual> llama_sparse_residual::load(
     }
 
     for (const auto & [buft, indices] : groups) {
-        const size_t tensor_count_for_buft = indices.size() * 3;
+        const size_t tensor_count_for_buft = checked_size_mul(indices.size(), 3, "GGML tensor count");
+        const size_t context_overhead = checked_size_mul(
+                tensor_count_for_buft, ggml_tensor_overhead(), "GGML context");
         ggml_init_params params = {
-            tensor_count_for_buft * ggml_tensor_overhead() + 4096,
+            checked_size_add(context_overhead, 64 * 1024, "GGML context"),
             nullptr,
             true,
         };
@@ -275,6 +300,9 @@ std::unique_ptr<llama_sparse_residual> llama_sparse_residual::load(
             entry.row_ptr = ggml_new_tensor_1d(context.get(), GGML_TYPE_I32, record.row_ptr.size());
             entry.col_idx = ggml_new_tensor_1d(context.get(), GGML_TYPE_I16, record.col_idx.size());
             entry.values = ggml_new_tensor_1d(context.get(), GGML_TYPE_F16, record.values.size());
+            if (entry.row_ptr == nullptr || entry.col_idx == nullptr || entry.values == nullptr) {
+                throw std::runtime_error("failed to create sparse residual GGML tensors for: " + record.name);
+            }
             ggml_set_name(entry.row_ptr, (record.name + ".sparse.row_ptr").c_str());
             ggml_set_name(entry.col_idx, (record.name + ".sparse.col_idx").c_str());
             ggml_set_name(entry.values,  (record.name + ".sparse.values").c_str());
@@ -288,9 +316,15 @@ std::unique_ptr<llama_sparse_residual> llama_sparse_residual::load(
         for (size_t index : indices) {
             const auto & record = records[index];
             const auto & entry = result->entries.at(record.weight);
-            ggml_backend_tensor_set(entry.row_ptr, record.row_ptr.data(), 0, record.row_ptr.size() * sizeof(uint32_t));
-            ggml_backend_tensor_set(entry.col_idx, record.col_idx.data(), 0, record.col_idx.size() * sizeof(uint16_t));
-            ggml_backend_tensor_set(entry.values, record.values.data(), 0, record.values.size() * sizeof(uint16_t));
+            const size_t row_ptr_bytes = checked_size_mul(record.row_ptr.size(), sizeof(uint32_t), "row pointer");
+            const size_t col_idx_bytes = checked_size_mul(record.col_idx.size(), sizeof(uint16_t), "column index");
+            const size_t value_bytes = checked_size_mul(record.values.size(), sizeof(uint16_t), "value");
+            if (entry.row_ptr->buffer == nullptr || entry.col_idx->buffer == nullptr || entry.values->buffer == nullptr) {
+                throw std::runtime_error("sparse residual tensor backend allocation failed for: " + record.name);
+            }
+            ggml_backend_tensor_set(entry.row_ptr, record.row_ptr.data(), 0, row_ptr_bytes);
+            ggml_backend_tensor_set(entry.col_idx, record.col_idx.data(), 0, col_idx_bytes);
+            ggml_backend_tensor_set(entry.values, record.values.data(), 0, value_bytes);
         }
 
         result->contexts.push_back(std::move(context));
