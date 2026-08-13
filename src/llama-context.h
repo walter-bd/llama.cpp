@@ -122,6 +122,21 @@ struct llama_context {
 
     void set_adapters_lora(llama_adapter_lora ** adapters, size_t n_adapters, float * scales);
 
+    bool init_fast_weights(int32_t rank);
+    bool set_fast_weights(const float * u_data, size_t u_count, const float * v_data, size_t v_count);
+    void clear_fast_weights();
+
+    bool init_attnres_sidecar(
+            int32_t rank,
+            llama_attnres_route_mode mode,
+            int32_t one_hot_tap,
+            bool scale_scores);
+    bool set_attnres_sidecar(
+            const float * u_data, size_t u_count,
+            const float * v_data, size_t v_count);
+    bool set_attnres_sidecar_query(const float * query_data, size_t query_count);
+    void clear_attnres_sidecar_map();
+
     bool adapters_lora_are_same(llama_adapter_lora ** adapters, size_t n_adapters, float * scales);
 
     bool set_adapter_cvec(
@@ -283,6 +298,8 @@ private:
     llama_cparams cparams;
 
     llama_adapter_cvec_ptr  cvec;
+    llama_adapter_fast_weights_ptr fast_weights;
+    llama_adapter_attnres_sidecar_ptr attnres_sidecar;
     llama_adapter_loras_ptr loras;
 
     llama_cross cross; // TODO: tmp for handling cross-attention - need something better probably

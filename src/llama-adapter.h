@@ -4,6 +4,7 @@
 
 #include "ggml-cpp.h"
 
+#include <array>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -40,6 +41,96 @@ private:
 };
 
 using llama_adapter_cvec_ptr = std::shared_ptr<llama_adapter_cvec>;
+
+// Context-local low-rank residual applied after the final model norm.
+// Tensor layout follows GGML mul_mat conventions:
+//   v: [n_embd, rank], u: [rank, n_embd].
+struct llama_adapter_fast_weights {
+    bool init(const llama_model & model, int32_t rank);
+    bool set(const float * u_data, size_t u_count, const float * v_data, size_t v_count);
+    void clear();
+
+    ggml_tensor * apply_to(ggml_context * ctx, ggml_tensor * cur) const;
+
+    int32_t get_rank() const { return rank; }
+    int32_t get_n_embd() const { return n_embd; }
+
+private:
+    int32_t rank = 0;
+    int32_t n_embd = 0;
+    ggml_tensor * u = nullptr;
+    ggml_tensor * v = nullptr;
+    std::vector<ggml_context_ptr> ctxs;
+    std::vector<ggml_backend_buffer_ptr> bufs;
+};
+
+using llama_adapter_fast_weights_ptr = std::unique_ptr<llama_adapter_fast_weights>;
+
+// External AttnRes-inspired reader over eight frozen Qwen residual-stream taps.
+// The reader owns only a pseudo-query and a context-local low-rank map. It does
+// not replace or mutate the model's residual connections.
+enum llama_attnres_route_mode {
+    LLAMA_ATTNRES_ROUTE_QUERY = 0,
+    LLAMA_ATTNRES_ROUTE_FINAL_QUERY,
+    LLAMA_ATTNRES_ROUTE_ONE_HOT,
+};
+
+struct llama_adapter_attnres_result {
+    ggml_tensor * output     = nullptr;
+    ggml_tensor * routed     = nullptr;
+    ggml_tensor * scores     = nullptr;
+    ggml_tensor * weights    = nullptr;
+    ggml_tensor * correction = nullptr;
+};
+
+struct llama_adapter_attnres_sidecar {
+    static constexpr int32_t N_TAPS = 8;
+
+    bool init(
+            const llama_model & model,
+            int32_t rank,
+            llama_attnres_route_mode mode,
+            int32_t one_hot_tap,
+            bool scale_scores);
+    bool set(
+            const float * u_data, size_t u_count,
+            const float * v_data, size_t v_count);
+    bool set_query(const float * query_data, size_t query_count);
+    void clear_map();
+
+    llama_adapter_attnres_result apply_to(
+            ggml_context * ctx,
+            ggml_tensor * cur,
+            const std::array<ggml_tensor *, N_TAPS> & taps,
+            float rms_eps) const;
+
+    bool matches(
+            int32_t requested_rank,
+            llama_attnres_route_mode requested_mode,
+            int32_t requested_one_hot_tap,
+            bool requested_scale_scores) const;
+
+    int32_t get_rank() const { return rank; }
+    int32_t get_n_embd() const { return n_embd; }
+    llama_attnres_route_mode get_mode() const { return mode; }
+    int32_t get_one_hot_tap() const { return one_hot_tap; }
+    bool get_scale_scores() const { return scale_scores; }
+
+private:
+    int32_t rank = 0;
+    int32_t n_embd = 0;
+    llama_attnres_route_mode mode = LLAMA_ATTNRES_ROUTE_QUERY;
+    int32_t one_hot_tap = -1;
+    bool scale_scores = true;
+
+    ggml_tensor * u = nullptr;
+    ggml_tensor * v = nullptr;
+    ggml_tensor * query = nullptr;
+    std::vector<ggml_context_ptr> ctxs;
+    std::vector<ggml_backend_buffer_ptr> bufs;
+};
+
+using llama_adapter_attnres_sidecar_ptr = std::unique_ptr<llama_adapter_attnres_sidecar>;
 
 //
 // llama_adapter_lora

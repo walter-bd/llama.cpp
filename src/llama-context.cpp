@@ -1283,6 +1283,64 @@ void llama_context::set_adapters_lora(llama_adapter_lora ** adapters, size_t n_a
     sched_need_reserve = true;
 }
 
+bool llama_context::init_fast_weights(int32_t rank) {
+    if (fast_weights && fast_weights->get_rank() == rank) {
+        return true;
+    }
+    auto candidate = std::make_unique<llama_adapter_fast_weights>();
+    if (!candidate->init(model, rank)) {
+        return false;
+    }
+    fast_weights = std::move(candidate);
+    sched_need_reserve = true;
+    return true;
+}
+
+bool llama_context::set_fast_weights(
+        const float * u_data, size_t u_count,
+        const float * v_data, size_t v_count) {
+    return fast_weights && fast_weights->set(u_data, u_count, v_data, v_count);
+}
+
+void llama_context::clear_fast_weights() {
+    if (fast_weights) {
+        fast_weights->clear();
+    }
+}
+
+bool llama_context::init_attnres_sidecar(
+        int32_t rank,
+        llama_attnres_route_mode mode,
+        int32_t one_hot_tap,
+        bool scale_scores) {
+    if (attnres_sidecar && attnres_sidecar->matches(rank, mode, one_hot_tap, scale_scores)) {
+        return true;
+    }
+    auto candidate = std::make_unique<llama_adapter_attnres_sidecar>();
+    if (!candidate->init(model, rank, mode, one_hot_tap, scale_scores)) {
+        return false;
+    }
+    attnres_sidecar = std::move(candidate);
+    sched_need_reserve = true;
+    return true;
+}
+
+bool llama_context::set_attnres_sidecar(
+        const float * u_data, size_t u_count,
+        const float * v_data, size_t v_count) {
+    return attnres_sidecar && attnres_sidecar->set(u_data, u_count, v_data, v_count);
+}
+
+bool llama_context::set_attnres_sidecar_query(const float * query_data, size_t query_count) {
+    return attnres_sidecar && attnres_sidecar->set_query(query_data, query_count);
+}
+
+void llama_context::clear_attnres_sidecar_map() {
+    if (attnres_sidecar) {
+        attnres_sidecar->clear_map();
+    }
+}
+
 bool llama_context::adapters_lora_are_same(llama_adapter_lora ** adapters, size_t n_adapters, float * scales) {
     LLAMA_LOG_DEBUG("%s: adapters = %p\n", __func__, (void *) adapters);
 
@@ -2449,6 +2507,8 @@ llm_graph_params llama_context::graph_params(
         /*.sched       =*/ sched.get(),
         /*.backend_cpu =*/ backend_cpu,
         /*.cvec        =*/ cvec.get(),
+        /*.fast_weights =*/ fast_weights.get(),
+        /*.attnres_sidecar =*/ attnres_sidecar.get(),
         /*.loras       =*/ loras.get(),
         /*.sparse_residual =*/ sparse_residual.get(),
         /*.mctx        =*/ mctx,

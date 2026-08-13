@@ -5,6 +5,7 @@
 #include "llama-model.h"
 
 #include <map>
+#include <cmath>
 #include <cassert>
 #include <sstream>
 #include <stdexcept>
@@ -131,6 +132,213 @@ bool llama_adapter_cvec::apply(
     }
 
     return true;
+}
+
+// fast weights
+
+bool llama_adapter_fast_weights::init(const llama_model & model, int32_t requested_rank) {
+    if (requested_rank <= 0 || model.output == nullptr || model.output->buffer == nullptr) {
+        return false;
+    }
+
+    rank = requested_rank;
+    n_embd = model.hparams.n_embd;
+
+    ggml_init_params params = {
+        /*.mem_size   =*/ 2 * ggml_tensor_overhead() + 64 * 1024,
+        /*.mem_buffer =*/ nullptr,
+        /*.no_alloc   =*/ true,
+    };
+    ggml_context * raw_ctx = ggml_init(params);
+    if (!raw_ctx) {
+        return false;
+    }
+    ctxs.emplace_back(raw_ctx);
+
+    // y = U(V^T x). GGML stores matrices as [columns, rows].
+    v = ggml_new_tensor_2d(raw_ctx, GGML_TYPE_F32, n_embd, rank);
+    u = ggml_new_tensor_2d(raw_ctx, GGML_TYPE_F32, rank, n_embd);
+    ggml_set_name(v, "fast_weights.v");
+    ggml_set_name(u, "fast_weights.u");
+
+    auto * buft = ggml_backend_buffer_get_type(model.output->buffer);
+    ggml_backend_buffer_t raw_buf = ggml_backend_alloc_ctx_tensors_from_buft(raw_ctx, buft);
+    if (!raw_buf) {
+        return false;
+    }
+    ggml_backend_buffer_clear(raw_buf, 0);
+    bufs.emplace_back(raw_buf);
+    return true;
+}
+
+bool llama_adapter_fast_weights::set(
+        const float * u_data, size_t u_count,
+        const float * v_data, size_t v_count) {
+    if (!u || !v || !u_data || !v_data ||
+            u_count != (size_t) rank * n_embd || v_count != (size_t) rank * n_embd) {
+        return false;
+    }
+    ggml_backend_tensor_set(u, u_data, 0, u_count * sizeof(float));
+    ggml_backend_tensor_set(v, v_data, 0, v_count * sizeof(float));
+    return true;
+}
+
+void llama_adapter_fast_weights::clear() {
+    for (const auto & buf : bufs) {
+        ggml_backend_buffer_clear(buf.get(), 0);
+    }
+}
+
+ggml_tensor * llama_adapter_fast_weights::apply_to(ggml_context * ctx, ggml_tensor * cur) const {
+    if (!u || !v) {
+        return cur;
+    }
+    ggml_tensor * coefficients = ggml_mul_mat(ctx, v, cur);
+    ggml_tensor * correction = ggml_mul_mat(ctx, u, coefficients);
+    return ggml_add(ctx, cur, correction);
+}
+
+// AttnRes-inspired sidecar
+
+bool llama_adapter_attnres_sidecar::init(
+        const llama_model & model,
+        int32_t requested_rank,
+        llama_attnres_route_mode requested_mode,
+        int32_t requested_one_hot_tap,
+        bool requested_scale_scores) {
+    if (requested_rank <= 0 || model.output == nullptr || model.output->buffer == nullptr) {
+        return false;
+    }
+    if (requested_mode == LLAMA_ATTNRES_ROUTE_ONE_HOT &&
+            (requested_one_hot_tap < 0 || requested_one_hot_tap >= N_TAPS)) {
+        return false;
+    }
+
+    rank = requested_rank;
+    n_embd = model.hparams.n_embd;
+    mode = requested_mode;
+    one_hot_tap = requested_one_hot_tap;
+    scale_scores = requested_scale_scores;
+
+    ggml_init_params params = {
+        /*.mem_size   =*/ 3 * ggml_tensor_overhead() + 128 * 1024,
+        /*.mem_buffer =*/ nullptr,
+        /*.no_alloc   =*/ true,
+    };
+    ggml_context * raw_ctx = ggml_init(params);
+    if (!raw_ctx) {
+        return false;
+    }
+    ctxs.emplace_back(raw_ctx);
+
+    // y = U(V^T z). GGML stores matrices as [columns, rows].
+    v = ggml_new_tensor_2d(raw_ctx, GGML_TYPE_F32, n_embd, rank);
+    u = ggml_new_tensor_2d(raw_ctx, GGML_TYPE_F32, rank, n_embd);
+    query = ggml_new_tensor_1d(raw_ctx, GGML_TYPE_F32, n_embd);
+    ggml_set_name(v, "attnres_sidecar.v");
+    ggml_set_name(u, "attnres_sidecar.u");
+    ggml_set_name(query, "attnres_sidecar.query");
+
+    auto * buft = ggml_backend_buffer_get_type(model.output->buffer);
+    ggml_backend_buffer_t raw_buf = ggml_backend_alloc_ctx_tensors_from_buft(raw_ctx, buft);
+    if (!raw_buf) {
+        return false;
+    }
+    ggml_backend_buffer_clear(raw_buf, 0);
+    bufs.emplace_back(raw_buf);
+    return true;
+}
+
+bool llama_adapter_attnres_sidecar::set(
+        const float * u_data, size_t u_count,
+        const float * v_data, size_t v_count) {
+    if (!u || !v || !u_data || !v_data ||
+            u_count != (size_t) rank * n_embd || v_count != (size_t) rank * n_embd) {
+        return false;
+    }
+    ggml_backend_tensor_set(u, u_data, 0, u_count * sizeof(float));
+    ggml_backend_tensor_set(v, v_data, 0, v_count * sizeof(float));
+    return true;
+}
+
+bool llama_adapter_attnres_sidecar::set_query(const float * query_data, size_t query_count) {
+    if (!query || !query_data || query_count != (size_t) n_embd) {
+        return false;
+    }
+    ggml_backend_tensor_set(query, query_data, 0, query_count * sizeof(float));
+    return true;
+}
+
+void llama_adapter_attnres_sidecar::clear_map() {
+    if (u) {
+        ggml_backend_tensor_memset(u, 0, 0, ggml_nbytes(u));
+    }
+    if (v) {
+        ggml_backend_tensor_memset(v, 0, 0, ggml_nbytes(v));
+    }
+}
+
+bool llama_adapter_attnres_sidecar::matches(
+        int32_t requested_rank,
+        llama_attnres_route_mode requested_mode,
+        int32_t requested_one_hot_tap,
+        bool requested_scale_scores) const {
+    return rank == requested_rank && mode == requested_mode &&
+        one_hot_tap == requested_one_hot_tap && scale_scores == requested_scale_scores;
+}
+
+llama_adapter_attnres_result llama_adapter_attnres_sidecar::apply_to(
+        ggml_context * ctx,
+        ggml_tensor * cur,
+        const std::array<ggml_tensor *, N_TAPS> & taps,
+        float rms_eps) const {
+    llama_adapter_attnres_result result;
+    result.output = cur;
+    if (!u || !v || !query) {
+        return result;
+    }
+    for (ggml_tensor * tap : taps) {
+        GGML_ASSERT(tap != nullptr);
+        GGML_ASSERT(tap->ne[0] == n_embd);
+        GGML_ASSERT(tap->ne[1] == cur->ne[1]);
+    }
+
+    ggml_tensor * routed = nullptr;
+    if (mode == LLAMA_ATTNRES_ROUTE_ONE_HOT) {
+        routed = taps[one_hot_tap];
+    } else {
+        ggml_tensor * effective_query = query;
+        if (mode == LLAMA_ATTNRES_ROUTE_FINAL_QUERY) {
+            effective_query = ggml_rms_norm(ctx, taps.back(), rms_eps);
+        }
+
+        ggml_tensor * scores = nullptr;
+        for (ggml_tensor * tap : taps) {
+            ggml_tensor * key = ggml_rms_norm(ctx, tap, rms_eps);
+            ggml_tensor * score = ggml_sum_rows(ctx, ggml_mul(ctx, key, effective_query));
+            if (scale_scores) {
+                score = ggml_scale(ctx, score, 1.0f/std::sqrt((float) n_embd));
+            }
+            scores = scores ? ggml_concat(ctx, scores, score, 0) : score;
+        }
+        ggml_tensor * weights = ggml_soft_max(ctx, scores);
+
+        for (int32_t i = 0; i < N_TAPS; ++i) {
+            ggml_tensor * weight = ggml_view_2d(
+                    ctx, weights, 1, weights->ne[1], weights->nb[1], i*weights->nb[0]);
+            ggml_tensor * weighted_tap = ggml_mul(ctx, taps[i], weight);
+            routed = routed ? ggml_add(ctx, routed, weighted_tap) : weighted_tap;
+        }
+        result.scores = scores;
+        result.weights = weights;
+    }
+
+    ggml_tensor * coefficients = ggml_mul_mat(ctx, v, routed);
+    ggml_tensor * correction = ggml_mul_mat(ctx, u, coefficients);
+    result.routed = routed;
+    result.correction = correction;
+    result.output = ggml_add(ctx, cur, correction);
+    return result;
 }
 
 // lora

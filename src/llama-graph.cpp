@@ -1459,6 +1459,8 @@ llm_graph_context::llm_graph_context(const llm_graph_params & params) :
     sched            (params.sched),
     backend_cpu      (params.backend_cpu),
     cvec             (params.cvec),
+    fast_weights     (params.fast_weights),
+    attnres_sidecar  (params.attnres_sidecar),
     loras            (params.loras),
     sparse_residual  (params.sparse_residual),
     mctx             (params.mctx),

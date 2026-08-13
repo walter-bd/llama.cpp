@@ -145,6 +145,10 @@ llama_model_qwen35::graph::graph(const llama_model & model, const llm_graph_para
 
     ggml_tensor * cur;
     ggml_tensor * inpL;
+    std::array<ggml_tensor *, llama_adapter_attnres_sidecar::N_TAPS> attnres_taps = {};
+    constexpr std::array<int, llama_adapter_attnres_sidecar::N_TAPS> attnres_layers = {
+        3, 7, 11, 15, 19, 23, 27, 31,
+    };
 
     inpL = build_inp_embd(model.tok_embd);
 
@@ -202,6 +206,15 @@ llama_model_qwen35::graph::graph(const llama_model & model, const llm_graph_para
         cur = build_cvec(cur, il);
         cb(cur, "l_out", il);
 
+        if (attnres_sidecar) {
+            for (size_t tap = 0; tap < attnres_layers.size(); ++tap) {
+                if (il == attnres_layers[tap]) {
+                    attnres_taps[tap] = cur;
+                    break;
+                }
+            }
+        }
+
         // Input for next layer
         inpL = cur;
     }
@@ -218,6 +231,44 @@ llama_model_qwen35::graph::graph(const llama_model & model, const llm_graph_para
 
     cb(cur, "result_norm", -1);
     res->t_embd = cur;
+
+    if (attnres_sidecar) {
+        auto routed_taps = attnres_taps;
+        if (inp_out_ids) {
+            for (ggml_tensor * & tap : routed_taps) {
+                if (tap->ne[1] != cur->ne[1]) {
+                    tap = ggml_get_rows(ctx0, tap, inp_out_ids);
+                }
+            }
+        }
+        static constexpr const char * tap_names[llama_adapter_attnres_sidecar::N_TAPS] = {
+            "attnres_tap_0", "attnres_tap_1", "attnres_tap_2", "attnres_tap_3",
+            "attnres_tap_4", "attnres_tap_5", "attnres_tap_6", "attnres_tap_7",
+        };
+        for (size_t tap = 0; tap < routed_taps.size(); ++tap) {
+            cb(routed_taps[tap], tap_names[tap], -1);
+        }
+        const auto sidecar = attnres_sidecar->apply_to(ctx0, cur, routed_taps, norm_rms_eps);
+        cur = sidecar.output;
+        if (sidecar.routed) {
+            cb(sidecar.routed, "attnres_routed", -1);
+        }
+        if (sidecar.scores) {
+            cb(sidecar.scores, "attnres_scores", -1);
+        }
+        if (sidecar.weights) {
+            cb(sidecar.weights, "attnres_weights", -1);
+        }
+        if (sidecar.correction) {
+            cb(sidecar.correction, "attnres_correction", -1);
+        }
+        cb(cur, "result_attnres_sidecar", -1);
+    }
+
+    if (fast_weights) {
+        cur = fast_weights->apply_to(ctx0, cur);
+        cb(cur, "result_fast_weights", -1);
+    }
 
     // LM head
     cur = build_lora_mm(model.output, cur, model.output_s);
