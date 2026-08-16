@@ -285,6 +285,7 @@ std::map<std::string, target_symbol> assign_targets(
 
 } // namespace
 
+#ifndef CLOSED_LOOP_SIDECAR_REASONING_EMBED
 int main(int argc, char ** argv) {
     const auto started = std::chrono::steady_clock::now();
     try {
@@ -618,3 +619,4 @@ int main(int argc, char ** argv) {
         return 1;
     }
 }
+#endif

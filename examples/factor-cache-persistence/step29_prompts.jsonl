@@ -1,0 +1,4 @@
+{"id":0,"name":"A1","source":"A","prompt":"Source A has a learned destination in memory. Think through the retrieval before answering."}
+{"id":1,"name":"A2","source":"A","prompt":"Reason about the stored association whose source is A, then determine its destination."}
+{"id":2,"name":"B1","source":"B","prompt":"Source B has a learned destination in memory. Think through the retrieval before answering."}
+{"id":3,"name":"B2","source":"B","prompt":"Reason about the stored association whose source is B, then determine its destination."}

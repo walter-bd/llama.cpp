@@ -1,0 +1,6 @@
+set(TARGET llama-stateful-recursive-sidecar)
+add_executable(llama-stateful-recursive-sidecar stateful-recursive-sidecar.cpp)
+install(TARGETS llama-stateful-recursive-sidecar RUNTIME)
+target_include_directories(llama-stateful-recursive-sidecar PRIVATE ${CMAKE_SOURCE_DIR}/src ${CMAKE_SOURCE_DIR}/common)
+target_link_libraries(llama-stateful-recursive-sidecar PRIVATE llama-common llama ${CMAKE_THREAD_LIBS_INIT})
+target_compile_features(llama-stateful-recursive-sidecar PRIVATE cxx_std_17)
