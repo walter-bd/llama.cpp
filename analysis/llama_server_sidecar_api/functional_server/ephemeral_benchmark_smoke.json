@@ -1,0 +1,16 @@
+{
+  "status": "passed",
+  "scope": "lifecycle-level benchmark workflow, not a scored benchmark",
+  "operations_exercised": [
+    "create fresh sidecar",
+    "run sidecar request",
+    "observe external outcome",
+    "read status",
+    "save/reload",
+    "delete sidecar",
+    "repeat with multiple sidecar IDs without model restart"
+  ],
+  "large_N_loop": "not_run",
+  "benchmark_client": "tools/server/sidecar_client.py",
+  "plasticity_in_python": false
+}

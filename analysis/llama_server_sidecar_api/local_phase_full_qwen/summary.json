@@ -1,0 +1,26 @@
+{
+  "phase": "1C",
+  "status": "not_validated",
+  "verdict": "llama_server_full_qwen_sidecar_backend_local_not_validated",
+  "remote_gpu_used": false,
+  "research_ref": "research/step28-30-recursive-plasticity",
+  "research_commit": "f89d3896283721b947f086c24ee207f1ed1baea9",
+  "local_build": "pass",
+  "sidecar_v1_compatibility": "pass_for_all_three_preserved_states",
+  "phase1_api_smoke": "pass",
+  "ordinary_no_sidecar": "pass",
+  "learning_off_immutability": "pass",
+  "explicit_observe_lifecycle": "pass",
+  "registry_isolation": "pass",
+  "public_cvec_sites": "partial",
+  "final_site": "unsupported",
+  "full_c2": "unsupported",
+  "c2q": "unsupported",
+  "failure_tags": [
+    "final_site_hook_missing",
+    "recursive_path_not_integrated",
+    "c2q_clean_context_missing",
+    "local_norm_calibration_not_exposed"
+  ],
+  "next_action": "Expose exact output projection and slot-local C2/C2q replay primitives locally before remote validation."
+}

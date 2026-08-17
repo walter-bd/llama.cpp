@@ -1,0 +1,33 @@
+{
+  "phase": "1B",
+  "scope": "local engineering",
+  "verdict": "llama_server_generic_sidecar_injection_local_not_validated",
+  "remote_instance_used": false,
+  "scientific_runtime_required": false,
+  "sidecar_v1_changed": false,
+  "profile_registry": {
+    "implemented_profiles": [
+      "qwen35-4b-step30-v1"
+    ],
+    "unsupported_models_fail_explicitly": true
+  },
+  "qwen_profile": {
+    "architecture": "qwen35",
+    "hidden_size": 2560,
+    "adapter": "identity/v1",
+    "query_hook": "result_norm",
+    "supported_graph_layers": [24, 28],
+    "supported_public_cvec_layers": [23, 27],
+    "final_logit_injection_supported": false,
+    "recursive_state_path_supported": false
+  },
+  "checks": {
+    "local_cuda_build": "pass",
+    "phase1_api_smoke_with_profile_contract": "pass",
+    "profile_mapping_audit": "pass",
+    "identity_adapter_contract": "pass",
+    "recursive_checkpoint_replay": "not_validated",
+    "sidecar_serialization_compatibility": "pass"
+  },
+  "claim_boundary": "The generic dispatch boundary and the partial Qwen public-cvec profile are implemented locally; full Step-30 final-logit and C2/C2q behavioral parity remains deferred."
+}

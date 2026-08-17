@@ -1,0 +1,7 @@
+{
+  "status": "blocked",
+  "required_claim": "query at t+1 is captured from the committed injected replay state at t",
+  "current_server_behavior": "sidecar cvec is applied after sampling for a later decode, not as a same-token replay committed before the next query",
+  "result": "not validated through server orchestration",
+  "failure_tags": ["stateful_next_token_not_from_committed_replay"]
+}

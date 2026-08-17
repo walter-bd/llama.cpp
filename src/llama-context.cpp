@@ -18,7 +18,9 @@
 #include <cmath>
 #include <cstring>
 #include <cstdlib>
+#include <algorithm>
 #include <limits>
+#include <new>
 #include <stdexcept>
 #include <string>
 
@@ -80,6 +82,15 @@ static const llm_fused_op_probe llm_fused_op_dsv4_hc_post_probe = {
     /*.op               =*/ LLM_FUSED_OP_DSV4_HC_POST,
     /*.name             =*/ "fused DeepSeek V4 HC post",
     /*.n_tokens_per_seq =*/ 1,
+};
+
+// A transaction owns a serialized snapshot of the context memory. It is
+// intentionally not a general session object: sampler state, output buffers,
+// adapters, and server bookkeeping remain outside this primitive.
+struct llama_state_transaction {
+    llama_context * owner = nullptr;
+    std::vector<uint8_t> state;
+    bool restored_exact = false;
 };
 
 llama_context::llama_context(
@@ -939,6 +950,109 @@ float * llama_context::get_embeddings_seq(llama_seq_id seq_id) {
     }
 
     return it->second.data();
+}
+
+bool llama_context::project_output(
+        const float * direction,
+                   size_t direction_count,
+                   float * projected,
+                   size_t projected_count) {
+    if (direction == nullptr || projected == nullptr || direction_count == 0 || projected_count == 0) {
+        return false;
+    }
+
+    synchronize();
+
+    const ggml_tensor * tensor = model.output;
+    if (tensor == nullptr || tensor->ne[2] != 1 || tensor->ne[3] != 1 ||
+            tensor->ne[0] != (int64_t) direction_count ||
+            tensor->ne[1] != (int64_t) projected_count) {
+        LLAMA_LOG_ERROR("%s: output tensor shape is incompatible with direction/output sizes\n", __func__);
+        return false;
+    }
+
+    if (!output_projection_ready) {
+        const int64_t width = tensor->ne[0];
+        const int64_t rows  = tensor->ne[1];
+        const size_t n_elements = (size_t) width * (size_t) rows;
+
+        std::vector<uint8_t> raw(ggml_nbytes(tensor));
+        if (raw.empty()) {
+            return false;
+        }
+
+        ggml_backend_tensor_get(tensor, raw.data(), 0, raw.size());
+        output_projection_host.resize(n_elements);
+
+        if (tensor->type == GGML_TYPE_F32) {
+            for (int64_t row = 0; row < rows; ++row) {
+                std::memcpy(output_projection_host.data() + row * width,
+                            raw.data() + row * tensor->nb[1],
+                            width * sizeof(float));
+            }
+        } else if (tensor->type == GGML_TYPE_F16) {
+            for (int64_t row = 0; row < rows; ++row) {
+                const auto * src = reinterpret_cast<const ggml_fp16_t *>(raw.data() + row * tensor->nb[1]);
+                ggml_fp16_to_fp32_row(src, output_projection_host.data() + row * width, width);
+            }
+        } else if (tensor->type == GGML_TYPE_BF16) {
+            for (int64_t row = 0; row < rows; ++row) {
+                const auto * src = reinterpret_cast<const ggml_bf16_t *>(raw.data() + row * tensor->nb[1]);
+                ggml_bf16_to_fp32_row(src, output_projection_host.data() + row * width, width);
+            }
+        } else {
+            const ggml_type_traits * traits = ggml_get_type_traits(tensor->type);
+            if (!ggml_is_quantized(tensor->type) || traits == nullptr || traits->to_float == nullptr) {
+                LLAMA_LOG_ERROR("%s: unsupported output tensor type: %s\n", __func__, ggml_type_name(tensor->type));
+                output_projection_host.clear();
+                return false;
+            }
+
+            for (int64_t row = 0; row < rows; ++row) {
+                const void * src = raw.data() + row * tensor->nb[1];
+                traits->to_float(src, output_projection_host.data() + row * width, width);
+            }
+        }
+
+        output_projection_width = width;
+        output_projection_rows  = rows;
+        output_projection_ready = true;
+    }
+
+    if (output_projection_width != (int64_t) direction_count ||
+            output_projection_rows != (int64_t) projected_count) {
+        return false;
+    }
+
+    for (int64_t row = 0; row < output_projection_rows; ++row) {
+        const float * weights = output_projection_host.data() + row * output_projection_width;
+        double sum = 0.0;
+        for (int64_t col = 0; col < output_projection_width; ++col) {
+            sum += (double) weights[col] * direction[col];
+        }
+        projected[row] = (float) sum;
+    }
+
+    return true;
+}
+
+bool llama_context::add_logits_residual(const float * residual, size_t residual_count) {
+    if (residual == nullptr || residual_count != (size_t) model.vocab.n_tokens()) {
+        return false;
+    }
+
+    synchronize();
+
+    float * logits_last = get_logits_ith(-1);
+    if (logits_last == nullptr) {
+        return false;
+    }
+
+    for (size_t i = 0; i < residual_count; ++i) {
+        logits_last[i] += residual[i];
+    }
+
+    return true;
 }
 
 float * llama_context::get_embeddings_nextn() {
@@ -3840,6 +3954,22 @@ float * llama_get_embeddings_seq(llama_context * ctx, llama_seq_id seq_id) {
     return ctx->get_embeddings_seq(seq_id);
 }
 
+bool llama_context_project_output(
+        llama_context * ctx,
+          const float * direction,
+                     size_t direction_count,
+                     float * projected,
+                     size_t projected_count) {
+    return ctx != nullptr && ctx->project_output(direction, direction_count, projected, projected_count);
+}
+
+bool llama_context_add_logits_residual(
+        llama_context * ctx,
+          const float * residual,
+                     size_t residual_count) {
+    return ctx != nullptr && ctx->add_logits_residual(residual, residual_count);
+}
+
 void llama_set_embeddings_nextn(llama_context * ctx, bool value, bool masked) {
     ctx->set_embeddings_nextn(value, masked);
 }
@@ -4110,6 +4240,64 @@ size_t llama_state_set_data(llama_context * ctx, const uint8_t * src, size_t siz
     ctx->synchronize();
 
     return ctx->state_set_data(src, size);
+}
+
+static bool llama_state_transaction_capture(llama_context * ctx, std::vector<uint8_t> & state) {
+    if (ctx == nullptr) {
+        return false;
+    }
+
+    ctx->synchronize();
+
+    const size_t size = ctx->state_get_size();
+    if (size == 0) {
+        return false;
+    }
+
+    state.resize(size);
+    return ctx->state_get_data(state.data(), state.size()) == state.size();
+}
+
+llama_state_transaction_t llama_state_transaction_begin(llama_context * ctx) {
+    auto * tx = new (std::nothrow) llama_state_transaction;
+    if (tx == nullptr || !llama_state_transaction_capture(ctx, tx->state)) {
+        delete tx;
+        return nullptr;
+    }
+
+    tx->owner = ctx;
+    return tx;
+}
+
+bool llama_state_transaction_restore(llama_context * ctx, llama_state_transaction_t tx) {
+    if (ctx == nullptr || tx == nullptr || tx->owner != ctx || tx->state.empty()) {
+        return false;
+    }
+
+    ctx->synchronize();
+
+    // The research implementation clears all sequences before restoring the
+    // serialized memory state. This is intentionally a whole-context
+    // operation and therefore requires exclusive ownership by the caller.
+    if (!llama_memory_seq_rm(ctx->get_memory(), 0, -1, -1)) {
+        return false;
+    }
+
+    if (ctx->state_set_data(tx->state.data(), tx->state.size()) != tx->state.size()) {
+        return false;
+    }
+
+    std::vector<uint8_t> restored;
+    tx->restored_exact = llama_state_transaction_capture(ctx, restored) && restored == tx->state;
+    return tx->restored_exact;
+}
+
+bool llama_state_transaction_is_exact(llama_state_transaction_t tx) {
+    return tx != nullptr && tx->restored_exact;
+}
+
+void llama_state_transaction_free(llama_state_transaction_t tx) {
+    delete tx;
 }
 
 bool llama_state_load_file(llama_context * ctx, const char * path_session, llama_token * tokens_out, size_t n_token_capacity, size_t * n_token_count_out) {

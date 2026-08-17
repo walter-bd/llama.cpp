@@ -1,0 +1,166 @@
+{
+  "phase": "1D",
+  "status": "core_primitives_partial_server_path_blocked",
+  "research_ref": {
+    "branch": "research/step28-30-recursive-plasticity",
+    "commit": "f89d3896283721b947f086c24ee207f1ed1baea9",
+    "sources": [
+      "examples/factor-cache-persistence/factor-cache-persistence.cpp",
+      "examples/integrated-recursive-plasticity/integrated-recursive-plasticity.cpp"
+    ]
+  },
+  "frozen_constants": {
+    "authority_max": 0.01,
+    "authority_reference_norm": 0.05,
+    "internal_site_23_weight": 0.23072,
+    "internal_site_27_weight": 0.38322,
+    "final_site_weight": 0.89438,
+    "local_rho_tolerance": 0.000002,
+    "max_local_norm_iterations": 6,
+    "plastic_eta": 0.05
+  },
+  "mechanisms": [
+    {
+      "id": "query_capture",
+      "research": {
+        "file": "examples/factor-cache-persistence/factor-cache-persistence.cpp",
+        "functions": ["run_stateful_step28", "decode_current_step28"],
+        "region": "stateful prepass result.final_hidden",
+        "tensor": "final hidden state after the current-token prepass",
+        "operation_order": ["prepass current token with persistent prior state", "capture final hidden", "normalize for retrieval query"]
+      },
+      "server_target": "opt-in context query-capture hook at the validated result_norm/final-hidden boundary",
+      "status": "requires core hook"
+    },
+    {
+      "id": "internal_site_23_injection",
+      "research": {
+        "file": "examples/factor-cache-persistence/factor-cache-persistence.cpp",
+        "functions": ["set_multi_internal_injection", "run_stateful_step28"],
+        "region": "multi_configuration site 23; graph callback boundary corresponding to validated block/site 24",
+        "tensor": "trace_collector.boundaries.at(23) and the matching graph tensor",
+        "operation_order": ["retrieve direction", "compute requested rho", "measure local boundary norm", "set alpha=requested_rho*local_norm", "inject during replay"]
+      },
+      "server_target": "generic hidden-state intervention hook selected by the Qwen profile",
+      "status": "requires exact graph hook and local calibration plumbing"
+    },
+    {
+      "id": "internal_site_27_injection",
+      "research": {
+        "file": "examples/factor-cache-persistence/factor-cache-persistence.cpp",
+        "functions": ["set_multi_internal_injection", "run_stateful_step28"],
+        "region": "multi_configuration site 27; graph callback boundary corresponding to validated block/site 28",
+        "tensor": "trace_collector.boundaries.at(27) and the matching graph tensor",
+        "operation_order": ["apply site 23 calibration first", "measure site 27 boundary norm under the causal graph", "set alpha=requested_rho*local_norm", "inject during replay"]
+      },
+      "server_target": "generic hidden-state intervention hook selected by the Qwen profile",
+      "status": "requires exact graph hook and local calibration plumbing"
+    },
+    {
+      "id": "final_output_residual",
+      "research": {
+        "file": "examples/factor-cache-persistence/factor-cache-persistence.cpp",
+        "functions": ["output_projection", "add_final_residual", "run_stateful_step28"],
+        "region": "after committed replay result_norm/final_hidden and before metrics/sampling",
+        "tensor": "projected = model output projection applied to normalized retrieval direction; logits",
+        "operation_order": ["project direction through model.output", "measure committed final hidden norm", "alpha_final=requested_rho*final_norm", "logits += alpha_final*projected"]
+      },
+      "server_target": "generic optional final-output/logit residual hook after model output projection and before sampling",
+      "status": "requires output-stage hook or equivalent core primitive"
+    },
+    {
+      "id": "transaction_checkpoint",
+      "research": {
+        "file": "examples/factor-cache-persistence/factor-cache-persistence.cpp",
+        "functions": ["state_blob::capture", "run_stateful_step28"],
+        "region": "checkpoint before current-token prepass",
+        "state_contents": ["full llama_state_get_size/get_data byte stream", "sequence/cache metadata represented by serialized state", "current committed position"]
+      },
+      "server_target": "slot/context-local opt-in decode transaction",
+      "status": "requires transactional core API"
+    },
+    {
+      "id": "transaction_prepass",
+      "research": {
+        "file": "examples/factor-cache-persistence/factor-cache-persistence.cpp",
+        "function": "run_stateful_step28",
+        "region": "decode_current_step28 before retrieval",
+        "operation_order": ["decode current token with previous committed sidecar-influenced state", "do not apply current-step injection", "capture query and probe baseline"]
+      },
+      "server_target": "transactional tentative decode on the owning llama context/slot",
+      "status": "requires transactional core API"
+    },
+    {
+      "id": "transaction_rollback",
+      "research": {
+        "file": "examples/factor-cache-persistence/factor-cache-persistence.cpp",
+        "functions": ["state_blob::restore", "run_stateful_step28::restore_checkpoint"],
+        "region": "after every prepass/calibration probe and before committed replay",
+        "operation_order": ["remove sequence 0 before restore", "llama_state_set_data", "capture restored state", "require byte equality with checkpoint"]
+      },
+      "server_target": "transaction restore that covers KV/state/positions/metadata, not only n_past",
+      "status": "requires exact restore validation"
+    },
+    {
+      "id": "transaction_replay_commit",
+      "research": {
+        "file": "examples/factor-cache-persistence/factor-cache-persistence.cpp",
+        "function": "run_stateful_step28",
+        "region": "final restore -> set injection -> decode_current_step28 -> committed state capture",
+        "operation_order": ["restore checkpoint", "set calibrated internal injection", "decode same current token", "apply final residual to returned logits", "commit exactly once"]
+      },
+      "server_target": "transactional replay-and-commit primitive with explicit committed decode counter",
+      "status": "requires core/server integration"
+    },
+    {
+      "id": "c2_retrieval",
+      "research": {
+        "file": "examples/factor-cache-persistence/factor-cache-persistence.cpp",
+        "function": "run_step29_stateful_episode",
+        "region": "step29_condition::c2 path calling run_stateful_step28 without override",
+        "operation_order": ["stateful query from prior injected cache", "bank apply_source", "stateful replay/commit"]
+      },
+      "server_target": "normal validated sidecar recursive path",
+      "status": "requires full transaction and profile hooks"
+    },
+    {
+      "id": "c2q_clean_retrieval_clamp",
+      "research": {
+        "file": "examples/factor-cache-persistence/factor-cache-persistence.cpp",
+        "function": "run_step29_stateful_episode",
+        "region": "step29_condition::c1a clean evaluation and step29_condition::c2q clamp_responses",
+        "operation_order": ["evaluate aligned visible prefix in separate clean context", "normalize clean final hidden", "compute clean bank response", "force response override during stateful replay", "verify exact response equality"]
+      },
+      "server_target": "request-local clean comparator context plus debug-only forced retrieval response",
+      "status": "requires separate clean context and aligned-prefix validation"
+    },
+    {
+      "id": "forward_only_writer",
+      "research": {
+        "file": "examples/integrated-recursive-plasticity/integrated-recursive-plasticity.cpp",
+        "functions": ["compute_gate_step30", "update_bank_step30"],
+        "region": "post-episode explicit outcome update",
+        "operation_order": ["compute N/R/S/C/G from observed event statistics", "eta=0.05", "target-directed rank-one write", "no generated-token learning"]
+      },
+      "server_target": "existing explicit /observe writer; do not couple it to core decode hooks",
+      "status": "preserve existing implementation"
+    }
+  ],
+  "core_constraints": [
+    "disabled intervention must be a no-op for ordinary llama.cpp execution",
+    "portable sidecar P must remain separate from transient request/slot KV state",
+    "generic core must not hardcode Qwen layer numbers or coefficients",
+    "unsupported or partially supported profiles must fail explicitly",
+    "sidecar_v1 serialization remains unchanged in Phase 1D"
+  ],
+  "pre_edit_decision": "Implement only after expert review confirms the proposed opt-in hooks and transaction boundary can preserve these exact semantics; otherwise stop with a precise architectural blocker.",
+  "implementation_result": {
+    "core_transaction_api": "implemented_and_compiled; snapshots/restores serialized llama memory state and verifies byte equality; does not restore sampler, output buffers, cvec adapter state, or server slot bookkeeping",
+    "output_projection_api": "implemented_and_compiled; read-only projection through the loaded model.output tensor and host logits residual application",
+    "hidden_site_capture": "research callback semantics mapped; server collector and calibrated replay path not wired",
+    "final_output_injection": "core primitives exist; server pre-sampling hook is not wired",
+    "stateful_c2": "not implemented in llama-server; current path remains post-sampling next-decode cvec",
+    "c2q": "not implemented; request-local clean comparator is absent",
+    "verdict": "llama_core_sidecar_intervention_local_not_validated"
+  }
+}

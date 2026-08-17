@@ -1,0 +1,36 @@
+{
+  "phase": "1D",
+  "artifact_directory": "analysis/llama_server_sidecar_api/local_phase_core",
+  "validation": "all JSON artifacts must parse; hashes are generated after final artifact edits",
+  "artifacts": [
+    "REPORT.md",
+    "summary.json",
+    "build_info.json",
+    "validated_semantics_mapping.json",
+    "expert_consultation_phase1d.md",
+    "core_api_contract.md",
+    "core_noop_regression.json",
+    "hook_dispatch.json",
+    "final_output_hook_test.json",
+    "transaction_restore_test.json",
+    "recursive_path_smoke.json",
+    "c2q_path_smoke.json",
+    "sidecar_api_regression.json",
+    "multi_sidecar_full_path.json",
+    "sidecar_v1_compatibility.json",
+    "performance.json",
+    "changed_files.json",
+    "remote_validation_plan.md",
+    "manifest.json"
+  ],
+  "source_of_truth_commit": "f89d3896283721b947f086c24ee207f1ed1baea9",
+  "build_executable_sha256": "28d5a56cb3ec2c943f7ea7b0462506b2fc566f45c87a8c9d85aad63063abe977",
+  "sha256": {
+    "include/llama.h": "58b53078589234748f9761cb15e60ca1d904f801e07ffa1a40687fd1b2661951",
+    "src/llama-context.h": "ca19331561e65489432c8f8e572e70e81fcb2567ef1844a71258bb2b14c436b5",
+    "src/llama-context.cpp": "973fec88c3e49db7de16e5ed5b9ca45de7e0faaa66c864609ba4ab282bbe43ac",
+    "validated_semantics_mapping.json": "16b11c97b45b11454ae04dadd61fab4ad64c2567fbac8644e50b01f97d766d59",
+    "expert_consultation_phase1d.md": "d19cf5edd469b4e9c7247512c63e8638b617a543c948577a0c10f049690da49e"
+  },
+  "manifest_hash_scope": "manifest.json is intentionally excluded from its own sha256 map"
+}

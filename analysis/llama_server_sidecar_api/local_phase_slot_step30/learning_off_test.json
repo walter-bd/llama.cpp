@@ -1,0 +1,7 @@
+{
+  "status": "existing_partial_api_only",
+  "verified": ["explicit observe boundary", "learning-off sidecar immutability in Phase 1 server tests"],
+  "full_c2_verified": false,
+  "reason": "The full C2 path was not enabled; existing learning tests do not establish Step-30 token-path parity.",
+  "failure_tags": ["full_c2_not_integrated"]
+}

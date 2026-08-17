@@ -1,0 +1,54 @@
+{
+  "status": "pass",
+  "format": "sidecar_v1",
+  "model_path": "/home/walt/models/qwen35-q3-sparse/Qwen3.5-4B-UD-Q3_K_XL.gguf",
+  "states": [
+    {
+      "name": "p_init",
+      "package_bytes": 42536,
+      "component_count": 2,
+      "width": 2560,
+      "payload_sha256": "7ced9f3d5ffebafcb5fe588d087f63bbb92618d9ff301b77f51dcd0b207aeae2",
+      "components_sha256": "9e9cd6ea5529eb9b917e44a699a5a188a4da873e65fb28cdd3ae203987310cf61",
+      "bank_fnv1a": "0adb053fd114ea6e",
+      "server_reported_sha256": "19831f8089b9753f6f22d800bdd89ba0881e0e8803411e8c7f9e583b4850ee36"
+    },
+    {
+      "name": "p_true_e4",
+      "package_bytes": 208059,
+      "component_count": 10,
+      "width": 2560,
+      "payload_sha256": "4a8db4a669083d7835b8adda6a78da5f3b5930d06656ca148ea719a88cd50054",
+      "components_sha256": "ab157454cc2130fb12a40c82607fa0eff145efc062387fb4436b31516c778a47",
+      "bank_fnv1a": "363aa3ffccf59f8e",
+      "server_reported_sha256": "3b8ae2f2bac45b1743cbb8aa08745d1ec20e2167b59b13cdc74b97ed86c45d27"
+    },
+    {
+      "name": "p_shuffled_e4",
+      "package_bytes": 208071,
+      "component_count": 10,
+      "width": 2560,
+      "payload_sha256": "3565ad3e64df5874e129061d7f2f81feb55147047662586c85e73907ab9d10d6",
+      "components_sha256": "5068695899824bfe7125d4bb383f39b0df46553443ebf0cabddf8cb20a38437a",
+      "bank_fnv1a": "a9831d1c9cb9c4be",
+      "server_reported_sha256": "81df1f0652be11ff10a02a529cfc08ceeee26fb54dcce54ff752b631ff8dd70f"
+    }
+  ],
+  "server_load_audit": {
+    "all_three_loaded": true,
+    "profile": "qwen35-4b-step30-v1",
+    "width": 2560,
+    "final_logit_injection_supported": false,
+    "recursive_state_path_supported": false
+  },
+  "checksum_notes": [
+    "payload_sha256 covers vectors.f32",
+    "components_sha256 covers components.jsonl",
+    "bank_fnv1a is the internal semantic bank fingerprint",
+    "server-reported package SHA is distinct from the manifest payload/component hashes"
+  ],
+  "serializer_changed": false,
+  "key_value_ordering_changed": false,
+  "semantic_load_save_covered": true,
+  "historical_runtime_metadata_preserved": true
+}

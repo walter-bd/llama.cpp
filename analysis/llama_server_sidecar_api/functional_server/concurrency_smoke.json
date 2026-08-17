@@ -1,0 +1,10 @@
+{
+  "status": "not_run",
+  "reason": "Phase 1F lifecycle smoke used one slot and sequential requests; no concurrency throughput claim is made.",
+  "safety_design": {
+    "ordinary_batching_with_sidecar": "disabled",
+    "sidecar_registry_locking": true,
+    "request_context_and_transaction_local": true
+  },
+  "follow_up": "Run modest concurrent sidecar requests before production-scale throughput claims."
+}

@@ -1,0 +1,24 @@
+{
+  "branch": "sparse-residual-v0.1",
+  "build_dir": "build",
+  "command": "cmake --build build --config Release --target llama-server -j2",
+  "compiler": "c++ 13.3.0",
+  "cmake": "3.28.3",
+  "cuda": "12.0",
+  "cuda_architecture": "75-real",
+  "options": {
+    "GGML_CUDA": true,
+    "GGML_CUDA_FA": true,
+    "GGML_CUDA_GRAPHS": true,
+    "GGML_CUDA_COMPRESSION": "size"
+  },
+  "gpu": "GTX 1660 Ti Max-Q",
+  "compute_capability": "7.5",
+  "driver": "580.173.02",
+  "executable": "build/bin/llama-server",
+  "executable_sha256": "28d5a56cb3ec2c943f7ea7b0462506b2fc566f45c87a8c9d85aad63063abe977",
+  "build_exit_code": 0,
+  "ui_note": "npm ci reported an existing node-engine mismatch; the configured fallback UI archive completed successfully.",
+  "remote_gpu_used": false,
+  "scientific_runtime_validation": "deferred"
+}

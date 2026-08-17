@@ -1,0 +1,9 @@
+{
+  "core_api_status": "available",
+  "core_apis": ["llama_context_project_output", "llama_context_add_logits_residual"],
+  "server_status": "blocked",
+  "required_order": "project direction -> add residual to replay logits -> sample once",
+  "current_order": "sample in post_decode -> capture/apply sidecar cvec after sampling",
+  "result": "pre-sampling final residual is not wired into llama-server",
+  "failure_tags": ["final_residual_after_sampling", "sampler_order_incompatible"]
+}

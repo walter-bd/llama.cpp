@@ -1,0 +1,9 @@
+{
+  "status": "not_validated",
+  "hard_gate": false,
+  "opt_in_api_compiled": true,
+  "ordinary_graph_path_modified": false,
+  "same_model_same_prompt_token_test": "not_run",
+  "exact_logits_test": "not_run",
+  "reason": "No compatible local Qwen3.5 model fixture was available; source audit confirms the new transaction/output APIs are opt-in but cannot replace an execution test."
+}

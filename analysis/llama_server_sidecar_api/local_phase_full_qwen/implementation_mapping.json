@@ -1,0 +1,103 @@
+{
+  "phase": "1C",
+  "status": "not_validated",
+  "research_ref": "research/step28-30-recursive-plasticity",
+  "research_ref_commit": "f89d3896283721b947f086c24ee207f1ed1baea9",
+  "validated_constants": {
+    "authority_max": 0.01,
+    "authority_scale": 0.01,
+    "authority_reference_norm": 0.05,
+    "alpha_block_24": 0.23072,
+    "alpha_block_28": 0.38322,
+    "alpha_final": 0.89438,
+    "writer_eta": 0.05,
+    "writer_gate": "clip01(0.25*max(N,S)+R*C)"
+  },
+  "mapping": [
+    {
+      "mechanism": "query capture",
+      "research_source": "examples/factor-cache-persistence/factor-cache-persistence.cpp::run_stateful_step28; result.prepass.final_hidden normalized after current-token prepass",
+      "server_target": "tools/server/server-sidecar.cpp::server_sidecar_manager::capture_query",
+      "status": "partial",
+      "notes": "The current profile names result_norm and the server captures an embedding, but it is invoked from the post-decode path and is not the exact current-token stateful prepass boundary."
+    },
+    {
+      "mechanism": "block/site 24 injection",
+      "research_source": "examples/factor-cache-persistence/factor-cache-persistence.cpp::run_stateful_step28; set_multi_internal_injection at internal site 23",
+      "server_target": "tools/server/server-sidecar-profile.cpp::server_sidecar_injection_engine::apply_internal_cvec",
+      "status": "partial",
+      "notes": "The public cvec path maps graph block 24 to public layer 23, but the validated path computes alpha as requested_rho times local norm using iterative calibration. The server currently uses a direct scale and budget approximation."
+    },
+    {
+      "mechanism": "block/site 28 injection",
+      "research_source": "examples/factor-cache-persistence/factor-cache-persistence.cpp::run_stateful_step28; set_multi_internal_injection at internal site 27",
+      "server_target": "tools/server/server-sidecar-profile.cpp::server_sidecar_injection_engine::apply_internal_cvec",
+      "status": "partial",
+      "notes": "The public cvec path maps graph block 28 to public layer 27, but validated local-norm calibration and current-token replay are not implemented in the server."
+    },
+    {
+      "mechanism": "final-site injection",
+      "research_source": "examples/factor-cache-persistence/factor-cache-persistence.cpp::output_projection and ::add_final_residual",
+      "server_target": "none",
+      "status": "unsupported",
+      "notes": "The research path projects the direction through model.output and adds alpha_final times the projected direction to logits after result_norm and before sampling. The current server has no faithful output-projection/logit hook."
+    },
+    {
+      "mechanism": "stateful checkpoint",
+      "research_source": "examples/factor-cache-persistence/factor-cache-persistence.cpp::state_blob::capture and ::run_stateful_step28",
+      "server_target": "none",
+      "status": "unsupported",
+      "notes": "Public state APIs exist, but the server slot lifecycle has no validated per-request current-token checkpoint integration."
+    },
+    {
+      "mechanism": "stateful prepass and query",
+      "research_source": "examples/factor-cache-persistence/factor-cache-persistence.cpp::run_stateful_step28",
+      "server_target": "none",
+      "status": "unsupported",
+      "notes": "The current server decodes and samples before applying its cvec hook; it does not obtain the query from a no-current-injection prepass over persistent injected state."
+    },
+    {
+      "mechanism": "rollback",
+      "research_source": "examples/factor-cache-persistence/factor-cache-persistence.cpp::state_blob::restore and restore_checkpoint lambda in ::run_stateful_step28",
+      "server_target": "none",
+      "status": "unsupported",
+      "notes": "No slot-local full-state checkpoint/rollback path is wired into server generation."
+    },
+    {
+      "mechanism": "injected replay and commit",
+      "research_source": "examples/factor-cache-persistence/factor-cache-persistence.cpp::run_stateful_step28",
+      "server_target": "none",
+      "status": "unsupported",
+      "notes": "The current cvec hook is installed after sampling for a later decode and cannot provide exactly one injected replay of the current token."
+    },
+    {
+      "mechanism": "C2 retrieval",
+      "research_source": "examples/factor-cache-persistence/factor-cache-persistence.cpp::run_step29_stateful_episode and examples/integrated-recursive-plasticity/integrated-recursive-plasticity.cpp::run_recursive_pair_step30",
+      "server_target": "none",
+      "status": "unsupported",
+      "notes": "The exact research implementation is recoverable from the preserved Git ref, but the current server does not expose the required replay/commit sequence."
+    },
+    {
+      "mechanism": "C2q clean-retrieval clamp",
+      "research_source": "examples/factor-cache-persistence/factor-cache-persistence.cpp::run_step29_stateful_episode; step29_condition::c2q and clamp_responses",
+      "server_target": "none",
+      "status": "unsupported",
+      "notes": "Validated C2q uses a separate clean context and aligned clamp responses from C1a. No equivalent live clean-prefix path exists in the current server request loop."
+    },
+    {
+      "mechanism": "forward-only writer",
+      "research_source": "examples/integrated-recursive-plasticity/integrated-recursive-plasticity.cpp::compute_gate_step30 and ::update_bank_step30",
+      "server_target": "tools/server/server-sidecar.cpp::server_sidecar_manager::observe",
+      "status": "partial",
+      "notes": "The explicit observe boundary and API plumbing exist, but the server episode is not produced by the exact full C2 reader."
+    }
+  ],
+  "blocking_findings": [
+    "Current sidecar cvec injection is applied after sampling and affects a later decode rather than the current-token prepass/replay/commit sequence.",
+    "Validated block/site injection requires per-site local-norm calibration; the current server does not capture or iterate those boundaries.",
+    "Validated final-site behavior is an output-projection logit correction before sampling; no faithful server target is exposed.",
+    "The current context implementation shares a model context across slots and has no validated slot-local full-state rollback/replay integration.",
+    "Validated C2q depends on a separate clean-prefix context and aligned clamp responses; the current server has no equivalent diagnostic path."
+  ],
+  "decision": "do_not_approximate; preserve the partial profile/API implementation and stop Phase 1C with full-backend verdict not validated"
+}

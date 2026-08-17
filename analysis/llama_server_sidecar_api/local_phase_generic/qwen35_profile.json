@@ -1,0 +1,38 @@
+{
+  "id": "qwen35-4b-step30-v1",
+  "architecture": "qwen35",
+  "hidden_size": 2560,
+  "minimum_layers": 32,
+  "query_hook": "result_norm",
+  "representation_adapter": {
+    "id": "identity",
+    "version": "v1",
+    "dimension_policy": "exact_match_only"
+  },
+  "authority": {
+    "max_budget": 0.01,
+    "reference_norm": 0.05
+  },
+  "sites": {
+    "block24": {
+      "graph_layer": 24,
+      "public_layer": 23,
+      "scale": 0.23072,
+      "supported": true
+    },
+    "block28": {
+      "graph_layer": 28,
+      "public_layer": 27,
+      "scale": 0.38322,
+      "supported": true
+    },
+    "final": {
+      "graph_layer": -1,
+      "public_layer": -1,
+      "scale": 0.89438,
+      "supported": false
+    }
+  },
+  "recursive_state_path_supported": false,
+  "sidecar_serialization": "sidecar_v1 unchanged"
+}

@@ -1,0 +1,53 @@
+{
+  "profile_id": "qwen35-4b-step30-v1",
+  "architecture": "qwen35",
+  "hidden_size": 2560,
+  "minimum_layers": 32,
+  "query": {
+    "research": "normalized final hidden state from the current-token prepass",
+    "server": "result_norm embedding via llama_get_embeddings_ith",
+    "parity_established": false
+  },
+  "representation_adapter": {
+    "id": "identity",
+    "version": "v1",
+    "exact_for_width_2560": true
+  },
+  "authority": {
+    "b_max": 0.01,
+    "reference_norm": 0.05,
+    "formula": "0.01 * min(1, norm(retrieval) / 0.05)"
+  },
+  "sites": [
+    {
+      "research_internal_layer": 23,
+      "server_graph_layer": 24,
+      "server_public_layer": 23,
+      "coefficient": 0.23072,
+      "public_cvec_available": true,
+      "step30_calibration_available": false
+    },
+    {
+      "research_internal_layer": 27,
+      "server_graph_layer": 28,
+      "server_public_layer": 27,
+      "coefficient": 0.38322,
+      "public_cvec_available": true,
+      "step30_calibration_available": false
+    },
+    {
+      "research_site": "post-result_norm output projection/logit residual",
+      "coefficient": 0.89438,
+      "public_hook_available": false,
+      "supported": false
+    }
+  ],
+  "capabilities": {
+    "multisite_injection": false,
+    "final_site": false,
+    "stateful_recursive_query": false,
+    "c2q_diagnostic": false,
+    "full_step30_parity": false
+  },
+  "sidecar_format": "sidecar_v1_unchanged"
+}

@@ -26,7 +26,11 @@ from typing import (
     Set,
 )
 from re import RegexFlag
-import wget
+
+try:
+    import wget
+except ImportError:
+    wget = None
 
 
 DEFAULT_HTTP_TIMEOUT = 60
@@ -109,6 +113,7 @@ class ServerProcess:
     mmproj_url: str | None = None
     no_mmproj: bool | None = None
     media_path: str | None = None
+    sidecar_dir: str | None = None
     sleep_idle_seconds: int | None = None
     cache_ram: int | None = None
     no_cache_idle_slots: bool = False
@@ -267,6 +272,8 @@ class ServerProcess:
             server_args.append("--no-mmproj")
         if self.media_path:
             server_args.extend(["--media-path", self.media_path])
+        if self.sidecar_dir:
+            server_args.extend(["--sidecar-dir", self.sidecar_dir])
         if self.sleep_idle_seconds is not None:
             server_args.extend(["--sleep-idle-seconds", self.sleep_idle_seconds])
         if self.cache_ram is not None:
@@ -707,6 +714,8 @@ def download_file(url: str, output_file_path: str | None = None) -> str:
     output_file = f'./tmp/{file_name}' if output_file_path is None else output_file_path
     if not os.path.exists(output_file):
         print(f"Downloading {url} to {output_file}")
+        if wget is None:
+            raise RuntimeError("the optional Python package 'wget' is required for model downloads")
         wget.download(url, out=output_file)
         print(f"Done downloading to {output_file}")
     else:

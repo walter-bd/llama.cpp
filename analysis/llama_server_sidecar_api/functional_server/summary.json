@@ -1,0 +1,50 @@
+{
+  "phase": "1F",
+  "verdict": "llama_sidecar_benchmark_server_functional",
+  "engineering_only": true,
+  "source_of_truth": {
+    "repository": "research/step28-30-recursive-plasticity",
+    "commit": "f89d38962"
+  },
+  "module_matrix": {
+    "gguf": {
+      "description": "ordinary llama.cpp inference",
+      "status": "smoke_passed"
+    },
+    "gguf_sparse_residual": {
+      "description": "ordinary inference plus LLAMA_SPARSE_RESIDUAL",
+      "status": "engineering_smoke_passed"
+    },
+    "gguf_sidecar_plasticity": {
+      "description": "external sidecar retrieval, runtime injection, and explicit observe writes",
+      "status": "engineering_smoke_passed_scientifically_untested_without_residual"
+    },
+    "gguf_sparse_residual_sidecar_plasticity": {
+      "description": "explicit sparse residual plus plastic sidecar composition",
+      "status": "smoke_passed"
+    }
+  },
+  "runtime": {
+    "profile": "qwen35-4b-step30-v1",
+    "query": "result_norm",
+    "authority_max": 0.01,
+    "authority_reference_norm": 0.05,
+    "hidden_public_layers": [24, 28],
+    "hidden_graph_layers": [23, 27],
+    "coefficients": [0.23072, 0.38322, 0.89438],
+    "final_residual_before_sampling": true,
+    "explicit_observe_only_writes": true
+  },
+  "tests": {
+    "ordinary_request": "passed",
+    "sidecar_lifecycle": "passed",
+    "sidecar_only_runtime": "passed",
+    "residual_only_runtime": "passed",
+    "combined_runtime": "passed",
+    "two_sidecar_isolation": "passed",
+    "restart_reload": "passed",
+    "concurrency": "not_run",
+    "performance_benchmark": "not_run"
+  },
+  "scientific_parity": "deferred"
+}

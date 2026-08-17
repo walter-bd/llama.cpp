@@ -1,0 +1,24 @@
+{
+  "phase": "1E",
+  "scope": "local engineering only",
+  "core_symbols": "verified",
+  "qwen_fixture": "available_and_loads",
+  "exact_server_path": "not_implemented",
+  "server_partial_path": "post_sampling_cvec_only",
+  "hard_blockers": [
+    "slot-local exclusive C2 transaction is absent",
+    "validated local-norm callback calibration is absent",
+    "final logits residual is not applied before sampling",
+    "request-local C2q clean comparator is absent"
+  ],
+  "scientific_mechanism_changed": false,
+  "historical_artifacts_modified": false,
+  "verdict": "llama_server_step30_slot_path_local_not_validated",
+  "failure_tags": [
+    "slot_transaction_not_exclusive",
+    "validated_local_calibration_unavailable",
+    "final_residual_after_sampling",
+    "c2q_clean_context_missing",
+    "stateful_next_token_not_from_committed_replay"
+  ]
+}

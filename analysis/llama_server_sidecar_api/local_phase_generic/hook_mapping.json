@@ -1,0 +1,37 @@
+{
+  "profile_id": "qwen35-4b-step30-v1",
+  "architecture": "qwen35",
+  "query": {
+    "hook": "result_norm",
+    "backend_api": "llama_get_embeddings_ith",
+    "adapter": "identity/v1"
+  },
+  "supported_sites": [
+    {
+      "hook": "residual_post_layer",
+      "index_space": "public_cvec",
+      "graph_layer": 24,
+      "public_layer": 23,
+      "scale": 0.23072,
+      "backend_supported": true
+    },
+    {
+      "hook": "residual_post_layer",
+      "index_space": "public_cvec",
+      "graph_layer": 28,
+      "public_layer": 27,
+      "scale": 0.38322,
+      "backend_supported": true
+    }
+  ],
+  "research_sites_not_supported_by_public_backend": [
+    {
+      "hook": "logits_pre_head",
+      "graph_layer": -1,
+      "scale": 0.89438,
+      "backend_supported": false,
+      "reason": "no public final-logit injection hook"
+    }
+  ],
+  "mapping_invariant": "graph_layer = public_layer + 1"
+}

@@ -54,6 +54,10 @@ struct task_params {
     bool return_tokens   = false;
     bool return_progress = false;
 
+    // Empty keeps the ordinary llama-server path.  A non-empty value selects
+    // one registered external sidecar for this request.
+    std::string sidecar_id;
+
     int32_t sse_ping_interval = 30; // seconds between SSE comment pings while the stream stays silent, -1 disables
 
     int32_t n_keep    =  0; // number of tokens to keep from initial prompt
@@ -184,6 +188,9 @@ struct server_task {
     }
 
     bool need_embd() const {
+        if (!params.sidecar_id.empty()) {
+            return true;
+        }
         switch (type) {
             case SERVER_TASK_TYPE_EMBEDDING:
             case SERVER_TASK_TYPE_RERANK:
@@ -347,6 +354,7 @@ struct server_task_result_cmpl_final : server_task_result {
     std::string        oaicompat_model;
     std::string        oaicompat_cmpl_id;
     common_chat_msg    oaicompat_msg; // to be populated by update()
+    std::string        sidecar_episode_id;
 
     std::vector<common_chat_msg_diff> oaicompat_msg_diffs; // to be populated by update()
     bool is_updated = false;

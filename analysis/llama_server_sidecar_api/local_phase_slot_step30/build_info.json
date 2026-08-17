@@ -1,0 +1,22 @@
+{
+  "phase": "1E",
+  "build_status": "passed",
+  "build_directory": "build",
+  "server_version": "0.1.0-dev (build 10462, commit 2c81172e5)",
+  "compiler": "GNU 13.3.0",
+  "cmake": "3.28.3",
+  "cuda": "12.0 V12.0.140",
+  "local_gpu": "GTX 1660 Ti",
+  "compute_capability": "7.5",
+  "server_executable": "build/bin/llama-server",
+  "server_sha256": "28d5a56cb3ec2c943f7ea7b0462506b2fc566f45c87a8c9d85aad63063abe977",
+  "llama_library": "build/bin/libllama.so.0.1.0",
+  "llama_library_sha256": "4b47b14b3fdc3ed2d33fdd7d7aff760e17cd8a0a708693f3f3c345f4995cb605",
+  "cli_executable": "build/bin/llama-cli",
+  "cli_sha256": "2e957b2f42dc0dfac8c30d335ff7bf071eb9ec61d2599157d05f7379a9f66c22",
+  "build_commands": [
+    "cmake --build build --config Release --target llama-server -j2",
+    "cmake --build build --target llama-cli -j2"
+  ],
+  "scientific_runtime_lock": "not required for Phase 1E local engineering"
+}

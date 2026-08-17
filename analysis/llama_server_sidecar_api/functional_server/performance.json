@@ -1,0 +1,13 @@
+{
+  "status": "not_measured",
+  "reason": "The Phase 1F smoke was correctness/lifecycle oriented and did not collect stable throughput or latency samples.",
+  "deferred_metrics": [
+    "ordinary tokens per second",
+    "sidecar tokens per second",
+    "request latency",
+    "create/reset/delete latency",
+    "observe latency",
+    "memory per active sidecar",
+    "concurrent throughput"
+  ]
+}

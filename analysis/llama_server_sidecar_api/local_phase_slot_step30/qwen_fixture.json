@@ -1,0 +1,10 @@
+{
+  "status": "available_and_loads",
+  "model": "/home/walt/models/qwen35-q3-sparse/Qwen3.5-4B-UD-Q3_K_XL.gguf",
+  "model_size_bytes": 2436420768,
+  "vocab": "/home/walt/work/llama.cpp/models/ggml-vocab-qwen35.gguf",
+  "probe_command": "build/bin/llama-cli -m /home/walt/models/qwen35-q3-sparse/Qwen3.5-4B-UD-Q3_K_XL.gguf -p hello -n 2 -ngl 99 --no-display-prompt --no-conversation --single-turn --simple-io",
+  "probe_result": "exit_0_model_loaded_and_exited",
+  "scientific_claim": false,
+  "limitation": "The fixture load smoke test does not validate server-side tensor hooks, local calibration, or Step-30 numerical parity."
+}

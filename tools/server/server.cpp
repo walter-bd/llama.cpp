@@ -242,6 +242,19 @@ int llama_server(common_params & params, int argc, char ** argv) {
     ctx_http.post("/v1/completions",           ex_wrapper(routes.post_completions_oai));
     ctx_http.post("/chat/completions",         ex_wrapper(routes.post_chat_completions));
     ctx_http.post("/v1/chat/completions",      ex_wrapper(routes.post_chat_completions));
+    // Sidecars are local-server resources. Router instances must proxy only
+    // model-facing routes and must not expose child-local sidecar state.
+    if (!is_router_server) {
+        ctx_http.get ("/v1/sidecar/status",     ex_wrapper(routes.get_sidecar_status));
+        ctx_http.post("/v1/sidecar/create",     ex_wrapper(routes.post_sidecar_create));
+        ctx_http.post("/v1/sidecar/load",       ex_wrapper(routes.post_sidecar_load));
+        ctx_http.post("/v1/sidecar/save",       ex_wrapper(routes.post_sidecar_save));
+        ctx_http.post("/v1/sidecar/reset",      ex_wrapper(routes.post_sidecar_reset));
+        ctx_http.post("/v1/sidecar/unload",     ex_wrapper(routes.post_sidecar_unload));
+        ctx_http.post("/v1/sidecar/learning",   ex_wrapper(routes.post_sidecar_learning));
+        ctx_http.post("/v1/sidecar/observe",    ex_wrapper(routes.post_sidecar_observe));
+        ctx_http.del ("/v1/sidecar/:id",         ex_wrapper(routes.delete_sidecar));
+    }
     ctx_http.post("/v1/chat/completions/control", ex_wrapper(routes.post_control));
     ctx_http.post("/v1/responses",             ex_wrapper(routes.post_responses_oai));
     ctx_http.post("/responses",                ex_wrapper(routes.post_responses_oai));

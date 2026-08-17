@@ -1,0 +1,19 @@
+{
+  "phase": "local_phase_generic",
+  "format_version": 1,
+  "artifacts": [
+    "REPORT.md",
+    "summary.json",
+    "build_info.json",
+    "test_results.json",
+    "hook_mapping.json",
+    "qwen35_profile.json",
+    "compatibility_tests.json",
+    "recursive_path_smoke.json",
+    "changed_files.json",
+    "remote_validation_plan.md",
+    "expert_consultation.md"
+  ],
+  "raw_scientific_artifacts_modified": false,
+  "remote_execution": false
+}

@@ -1,0 +1,14 @@
+{
+  "phase": "1E",
+  "directory": "analysis/llama_server_sidecar_api/local_phase_slot_step30",
+  "artifact_validation": "all JSON artifacts are intended to be parsed as strict JSON",
+  "source_commit": "f89d3896283721b947f086c24ee207f1ed1baea9",
+  "current_branch": "sparse-residual-v0.1",
+  "current_head": "2c81172e5",
+  "server_sha256": "28d5a56cb3ec2c943f7ea7b0462506b2fc566f45c87a8c9d85aad63063abe977",
+  "libllama_sha256": "4b47b14b3fdc3ed2d33fdd7d7aff760e17cd8a0a708693f3f3c345f4995cb605",
+  "model_fixture": "/home/walt/models/qwen35-q3-sparse/Qwen3.5-4B-UD-Q3_K_XL.gguf",
+  "remote_experiment_started": false,
+  "source_files_modified_by_phase_1e": false,
+  "historical_step_28_to_31b_artifacts_modified": false
+}

@@ -1,0 +1,40 @@
+{
+  "phase": "1F",
+  "verdict": "llama_sidecar_benchmark_server_functional",
+  "artifact_directory": "analysis/llama_server_sidecar_api/functional_server",
+  "artifacts": [
+    "REPORT.md",
+    "summary.json",
+    "build_info.json",
+    "runtime_port_mapping.json",
+    "expert_consultation.md",
+    "accepted_recommendations.md",
+    "runtime_path_smoke.json",
+    "runtime_ordering.json",
+    "api_regression.json",
+    "learning_semantics.json",
+    "save_reload.json",
+    "multi_sidecar.json",
+    "ephemeral_benchmark_smoke.json",
+    "concurrency_smoke.json",
+    "performance.json",
+    "changed_files.json",
+    "scientific_parity_deferred.md",
+    "benchmark_readiness.md",
+    "manifest.json"
+  ],
+  "input_integrity": {
+    "model_sha256": "1874727e4bb6ac23fd0cd134ac6562d2759fe44f37fa68c55197b36526da4e37",
+    "p_init_manifest_sha256": "bc9fbcd3e211a24ce18be07da12ccffc1f0b41ffe2465134d7430f959f70d9e8",
+    "p_init_components_sha256": "9e9cd6ea552eb9b917e44a699a5a188a4da873e65fb28cdd3ae203987310cf61",
+    "p_init_vectors_sha256": "7ced9f3d5ffebafcb5fe588d087f63bbb92618d9ff301b77f51dcd0b207aeae2",
+    "sparse_residual_sha256": "63202298b1c797aec1bf2a5c666fa36e62d8b142a800bf4583a53fe10aefdee6",
+    "executable_sha256": "3d368d058765f097d20e322fcee00b2b9f41745a78ed352526c59e2a054bbfdb"
+  },
+  "validation": {
+    "json_files": "validated offline after creation",
+    "raw_step28_to_step31b_artifacts_modified": false,
+    "module_matrix": "ordinary GGUF, residual-only, sidecar-only, and residual-plus-sidecar engineering smokes passed",
+    "scientific_parity_claim": false
+  }
+}

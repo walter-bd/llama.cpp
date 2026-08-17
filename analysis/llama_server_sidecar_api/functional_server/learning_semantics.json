@@ -1,0 +1,12 @@
+{
+  "status": "passed",
+  "chat_without_observe_mutates_bank": false,
+  "learning_disabled_observe_mutates_bank": false,
+  "explicit_observe_mutates_selected_bank": true,
+  "episode_handle_returned_when_learning_enabled": true,
+  "episode_handle_consumed_by_observe": true,
+  "writer": "existing Step-30 forward-only writer through server-sidecar manager",
+  "writer_eta": 0.05,
+  "generated_tokens_as_targets": false,
+  "scope": "API/lifecycle smoke only; no Step-30 behavioral gain claim"
+}

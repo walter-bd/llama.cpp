@@ -1,0 +1,9 @@
+{
+  "status": "preserved_from_prior_phase",
+  "format": "sidecar_v1",
+  "serialization_changed_in_phase_1e": false,
+  "historical_states": ["P_init", "P_T_E4", "P_S_E4"],
+  "prior_compatibility_result": "all three historical states load semantically with 2560 width and expected component metadata",
+  "phase_1e_action": "no serializer or FNV semantics changes",
+  "note": "This artifact records preservation; it is not a new full-path behavioral validation."
+}

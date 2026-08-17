@@ -1,0 +1,34 @@
+{
+  "status": "pass",
+  "runner": "tools/server/tests/sidecar_api_smoke.py",
+  "exit_code": 0,
+  "tests": {
+    "ordinary_no_sidecar_smoke": "pass",
+    "default_sidecar_opt_in_guard": "pass",
+    "lifecycle_api": "pass",
+    "sidecar_v1_load_save_roundtrip": "pass",
+    "bad_checksum_rejected": "pass",
+    "duplicate_create_rejected": "pass",
+    "unknown_sidecar_rejected": "pass",
+    "learning_off_hash_invariant": "pass",
+    "explicit_observe_boundary": "pass",
+    "invalid_episode_rejected": "pass",
+    "consumed_episode_rejected": "pass",
+    "multi_sidecar_isolation": "pass",
+    "server_restart_reload": "pass",
+    "ephemeral_delete": "pass"
+  },
+  "observed": {
+    "written_components": 1,
+    "restart_components": 1,
+    "written_sha256": "ff4fe2e6a4b795e3e418850df982ef9b0bf3485fe15e95c3b6e6325768a69dfe",
+    "bad_checksum_http_status": 400,
+    "duplicate_create_http_status": 400,
+    "invalid_observe_http_status": 400,
+    "unknown_sidecar_http_status": 400,
+    "default_status_enabled": false,
+    "create_without_sidecar_dir_http_status": 400
+  },
+  "scientific_behavioral_parity": "not_run_in_phase_1",
+  "remote_validation": "deferred"
+}

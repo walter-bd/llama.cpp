@@ -1,0 +1,6 @@
+{
+  "status": "existing_partial_api_only",
+  "verified": ["explicit /observe is the mutation boundary", "invalid and consumed episode handling"],
+  "full_c2_episode_capture_verified": false,
+  "reason": "The current episode is produced by the partial post-sampling cvec path, not the exact C2 replay path."
+}

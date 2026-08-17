@@ -154,6 +154,16 @@ struct server_routes {
     server_http_context::handler_t get_lora_adapters;
     server_http_context::handler_t post_lora_adapters;
 
+    server_http_context::handler_t get_sidecar_status;
+    server_http_context::handler_t post_sidecar_create;
+    server_http_context::handler_t post_sidecar_load;
+    server_http_context::handler_t post_sidecar_save;
+    server_http_context::handler_t post_sidecar_reset;
+    server_http_context::handler_t post_sidecar_unload;
+    server_http_context::handler_t post_sidecar_learning;
+    server_http_context::handler_t post_sidecar_observe;
+    server_http_context::handler_t delete_sidecar;
+
     // to be used in router mode
     json get_model_info() const;
 
@@ -174,7 +184,7 @@ private:
     std::unique_ptr<const server_context_meta> meta;
 
     const common_params & params;
-    const server_context_impl & ctx_server;
+    server_context_impl & ctx_server;
 
     server_queue & queue_tasks;
     server_response & queue_results;

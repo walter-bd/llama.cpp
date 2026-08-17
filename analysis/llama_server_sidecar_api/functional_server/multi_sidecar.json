@@ -1,0 +1,13 @@
+{
+  "status": "passed",
+  "scope": "sequential interleaving in lifecycle smoke",
+  "sequence": ["sidecar-a", "sidecar-b", "sidecar-a", "sidecar-b"],
+  "checks": {
+    "explicit_id_routing": true,
+    "sidecar_b_unchanged_by_sidecar_a": true,
+    "sidecar_a_retrievals_incremented": true,
+    "unknown_last_active_fallback": false,
+    "episode_isolation": true
+  },
+  "concurrent_stress": "not_run"
+}

@@ -1,0 +1,18 @@
+{
+  "phase_1d_core_changes": [
+    "include/llama.h",
+    "src/llama-context.h",
+    "src/llama-context.cpp"
+  ],
+  "preexisting_server_or_phase_changes_not_rewritten": [
+    "tools/server/server-context.cpp",
+    "tools/server/server-context.h",
+    "tools/server/server-sidecar.cpp",
+    "tools/server/server-sidecar.h",
+    "tools/server/server-sidecar-profile.cpp",
+    "tools/server/server-sidecar-profile.h"
+  ],
+  "historical_research_artifacts_modified": false,
+  "sidecar_v1_modified": false,
+  "staged_or_committed": false
+}

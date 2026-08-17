@@ -1,0 +1,24 @@
+{
+  "status": "not_validated",
+  "core_api_build": "passed",
+  "exact_transaction_test": "not_run",
+  "existing_recurrent_test": {
+    "command": "build/bin/test-recurrent-state-rollback",
+    "result": "failed_uninterpretable",
+    "signal": 11,
+    "reason": "The test was invoked without its required generated Qwen35 model fixture and model argument; no rollback conclusion is drawn."
+  },
+  "implemented_checks": [
+    "serialized memory state is captured after synchronization",
+    "restore recaptures and compares bytes",
+    "restore returns exactness status"
+  ],
+  "missing_checks": [
+    "server slot bookkeeping",
+    "sampler/output state",
+    "cvec adapter state",
+    "multi-slot exclusivity",
+    "one committed replay in llama-server"
+  ],
+  "hard_gate": false
+}

@@ -1,0 +1,39 @@
+{
+  "status": "local_phase_complete",
+  "new": [
+    "tools/server/server-sidecar.cpp",
+    "tools/server/server-sidecar.h",
+    "tools/server/sidecar_client.py",
+    "docs/sidecar-server.md",
+    "tools/server/tests/sidecar_api_smoke.py",
+    "analysis/llama_server_sidecar_api/local_phase/REPORT.md",
+    "analysis/llama_server_sidecar_api/local_phase/summary.json",
+    "analysis/llama_server_sidecar_api/local_phase/api_contract.md",
+    "analysis/llama_server_sidecar_api/local_phase/build_info.json",
+    "analysis/llama_server_sidecar_api/local_phase/test_results.json",
+    "analysis/llama_server_sidecar_api/local_phase/changed_files.json",
+    "analysis/llama_server_sidecar_api/local_phase/remote_validation_plan.md"
+  ],
+  "modified": [
+    "common/arg.cpp",
+    "common/common.h",
+    "tools/server/CMakeLists.txt",
+    "tools/server/server-context.cpp",
+    "tools/server/server-context.h",
+    "tools/server/server-task.cpp",
+    "tools/server/server-task.h",
+    "tools/server/server.cpp",
+    "tools/server/tests/utils.py"
+  ],
+  "historical_research_artifacts_modified": false,
+  "unrelated_untracked_examples_excluded": true,
+  "unrelated_untracked_examples": [
+    "examples/centered-outcome-relevance/",
+    "examples/competitive-reader-forward-validation/",
+    "examples/hard-negative-context-generalization/",
+    "examples/integrated-recursive-plasticity.cpp",
+    "examples/outcome-conditioned-context-relevance/",
+    "examples/outcome-modulated-discriminative-relevance/",
+    "examples/step11-memory-retrieval-audit/"
+  ]
+}

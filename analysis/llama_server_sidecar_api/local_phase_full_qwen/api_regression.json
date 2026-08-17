@@ -1,0 +1,26 @@
+{
+  "status": "pass",
+  "test": "tools/server/tests/sidecar_api_smoke.py",
+  "build": "build/bin/llama-server",
+  "exit_code": 0,
+  "covered": [
+    "ordinary no-sidecar request",
+    "profile status",
+    "duplicate create rejection",
+    "bad checksum rejection",
+    "explicit observe",
+    "learning-off SHA immutability",
+    "disabled observe",
+    "invalid episode",
+    "save/load",
+    "restart/reload",
+    "unknown sidecar",
+    "registry isolation"
+  ],
+  "observed_profile": {
+    "id": "qwen35-4b-step30-v1",
+    "sites": ["site24", "site28"],
+    "final_logit_injection_supported": false,
+    "recursive_state_path_supported": false
+  }
+}

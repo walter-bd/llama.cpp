@@ -1,0 +1,13 @@
+{
+  "status": "blocked",
+  "research_semantics": {
+    "sites": [23, 27],
+    "iterations": 6,
+    "tolerance": 0.000002,
+    "restore_before_each_probe": true,
+    "boundary_correction": "captured_boundary - alpha * direction"
+  },
+  "current_server_behavior": "public cvec coefficients are installed without the research callback-driven local norm solve",
+  "result": "not implemented or dynamically validated",
+  "failure_tags": ["validated_local_calibration_unavailable", "partial_cvec_only"]
+}

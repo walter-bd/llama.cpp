@@ -1,0 +1,8 @@
+{
+  "status": "blocked",
+  "required_contexts": ["stateful generation context", "request-local clean comparator context"],
+  "required_assertion": "forced retrieval checksum equals clean retrieval checksum for identical visible token prefix",
+  "current_server_behavior": "no request-local clean comparator context exists",
+  "result": "C2q is not implemented in llama-server",
+  "failure_tags": ["c2q_clean_context_missing", "c2q_prefix_alignment_not_guaranteed"]
+}

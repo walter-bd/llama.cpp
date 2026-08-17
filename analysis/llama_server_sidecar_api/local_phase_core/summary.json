@@ -1,0 +1,24 @@
+{
+  "phase": "1D",
+  "scope": "local engineering only",
+  "verdict": "llama_core_sidecar_intervention_local_not_validated",
+  "research_source": {
+    "ref": "research/step28-30-recursive-plasticity",
+    "commit": "f89d3896283721b947f086c24ee207f1ed1baea9"
+  },
+  "core_primitives": {
+    "memory_transaction": "compiled",
+    "output_projection": "compiled",
+    "logits_residual": "compiled"
+  },
+  "full_step30_server_path": {
+    "stateful_c2": "not_implemented",
+    "c2q_clean_comparator": "not_implemented",
+    "calibrated_hidden_sites": "not_wired",
+    "final_residual_before_sampling": "not_wired",
+    "slot_exclusive_transaction": "not_available"
+  },
+  "scientific_mechanism_changed": false,
+  "sidecar_v1_changed": false,
+  "remote_validation_ready": false
+}

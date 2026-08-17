@@ -1,0 +1,5 @@
+{
+  "status": "not_run",
+  "reason": "The exact transactional server path was not implemented; a zero-authority control over the existing partial path would not validate the required transaction/replay machinery.",
+  "required_future_assertions": ["checkpoint_equals_restored_state", "one_committed_replay_per_token", "same_tokens_as_ordinary_decode", "no_sampler_prepass_side_effect"]
+}

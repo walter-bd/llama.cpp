@@ -1,0 +1,13 @@
+{
+  "status": "unchanged_not_revalidated_in_phase_1D",
+  "format": "sidecar_v1",
+  "serializer_changed": false,
+  "historical_artifacts": [
+    "P_init",
+    "P_T_E4",
+    "P_S_E4"
+  ],
+  "prior_phase_claim": "preserved by Phase 1C/1B artifacts",
+  "phase_1d_action": "no format or FNV/key-value ordering changes",
+  "reason": "Phase 1D stopped at the core/server transaction boundary and did not reopen the validated portability audit."
+}

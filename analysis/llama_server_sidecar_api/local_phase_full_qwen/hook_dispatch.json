@@ -1,0 +1,38 @@
+{
+  "status": "partial",
+  "profile": "qwen35-4b-step30-v1",
+  "query": {
+    "profile_query_hook": "result_norm",
+    "server_capture": "llama_get_embeddings_ith",
+    "full_current_token_prepass_parity": false
+  },
+  "sites": [
+    {
+      "name": "site24",
+      "research_layer": 23,
+      "server_graph_layer": 24,
+      "server_public_layer": 23,
+      "coefficient": 0.23072,
+      "public_cvec_dispatch": true,
+      "validated_calibration_dispatch": false
+    },
+    {
+      "name": "site28",
+      "research_layer": 27,
+      "server_graph_layer": 28,
+      "server_public_layer": 27,
+      "coefficient": 0.38322,
+      "public_cvec_dispatch": true,
+      "validated_calibration_dispatch": false
+    },
+    {
+      "name": "final",
+      "location": "post-result_norm output projection/logit residual",
+      "coefficient": 0.89438,
+      "public_dispatch": false,
+      "reason": "output projection and logits correction are not exposed by current server path"
+    }
+  ],
+  "structured_full_step30_dispatch": false,
+  "no_sidecar_path_covered": true
+}

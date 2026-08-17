@@ -1,0 +1,7 @@
+{
+  "status": "not_run_for_exact_path",
+  "research_sites": ["l_out-23", "l_out-27"],
+  "current_partial_path": ["public cvec graph layer 24", "public cvec graph layer 28"],
+  "reason": "The current cvec path is installed after sampling for the next decode and is not equivalent to committed replay injection.",
+  "failure_tags": ["hidden_replay_not_integrated"]
+}

@@ -1,0 +1,20 @@
+{
+  "phase": "1B",
+  "new_or_modified_for_phase": [
+    "tools/server/server-sidecar-profile.h",
+    "tools/server/server-sidecar-profile.cpp",
+    "tools/server/server-sidecar.h",
+    "tools/server/server-sidecar.cpp",
+    "tools/server/server-context.cpp",
+    "tools/server/CMakeLists.txt",
+    "tools/server/tests/sidecar_api_smoke.py",
+    "docs/sidecar-server.md"
+  ],
+  "phase1_files_reused": [
+    "tools/server/sidecar_client.py",
+    "analysis/llama_server_sidecar_api/local_phase/"
+  ],
+  "historical_research_artifacts_modified": false,
+  "unrelated_untracked_examples_modified": false,
+  "remote_files_modified": false
+}

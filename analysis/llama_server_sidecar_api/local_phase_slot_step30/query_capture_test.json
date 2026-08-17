@@ -1,0 +1,8 @@
+{
+  "status": "blocked",
+  "required_location": "result_norm, final hidden vector of tentative current-token prepass",
+  "research_reference": "f89d3896283721b947f086c24ee207f1ed1baea9:examples/injection-depth-threshold/injection-depth-threshold.cpp:132-147",
+  "current_server_behavior": "capture_query uses llama_get_embeddings_ith after sampling",
+  "result": "not dynamically validated through the server C2 path",
+  "failure_tags": ["query_hook_not_connected", "post_sampling_capture"]
+}

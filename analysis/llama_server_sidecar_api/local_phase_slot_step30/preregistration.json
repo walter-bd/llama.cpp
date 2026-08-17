@@ -1,0 +1,37 @@
+{
+  "phase": "1E",
+  "scope": "local engineering only",
+  "remote_runtime_required": false,
+  "scientific_mechanism_changes_allowed": false,
+  "passing_verdict": "llama_server_step30_slot_path_local_validated",
+  "negative_verdict": "llama_server_step30_slot_path_local_not_validated",
+  "hard_requirements": [
+    "built Phase 1D core APIs",
+    "compatible Qwen3.5 fixture",
+    "ordinary no-sidecar no-op",
+    "exact query capture",
+    "validated local calibration",
+    "hidden injections at l_out-23 and l_out-27",
+    "pre-sampling projected final residual",
+    "exact transaction restore",
+    "one sampler call and one committed replay per token",
+    "stateful C2 retrieval",
+    "aligned C2q clean retrieval clamp",
+    "learning-off immutability",
+    "explicit observe-only mutation",
+    "multi-sidecar isolation",
+    "unchanged sidecar_v1",
+    "explicit failure for unsupported profiles"
+  ],
+  "stop_conditions": [
+    "slot transaction is not exclusive",
+    "restore is not exact",
+    "final residual cannot be applied before sampling",
+    "validated calibration is unavailable",
+    "C2q prefix alignment cannot be guaranteed",
+    "Qwen fixture unavailable",
+    "ordinary server regression",
+    "sidecar_v1 change required"
+  ],
+  "result_policy": "Do not replace missing exactness with post-sampling cvec, approximate normalization, sequence-local partial restore, or a different final-site operation."
+}

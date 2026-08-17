@@ -61,7 +61,10 @@ extern "C" {
     struct llama_vocab;
     struct llama_model;
     struct llama_context;
+    struct llama_state_transaction;
     struct llama_sampler;
+
+    typedef struct llama_state_transaction * llama_state_transaction_t;
 
     typedef struct llama_memory_i * llama_memory_t;
 
@@ -829,6 +832,25 @@ extern "C" {
                    const uint8_t * src),
         "use llama_state_set_data instead");
 
+    // Transactional snapshot of the context memory state for a single,
+    // exclusively owned decode context. The snapshot does not include
+    // sampler state, output buffers, adapter state, or server bookkeeping.
+    LLAMA_API llama_state_transaction_t llama_state_transaction_begin(
+            struct llama_context * ctx);
+
+    // Restore the captured memory state. The current context memory is
+    // cleared before restoration. Returns true only after a byte-identical
+    // recapture of the transaction state.
+    LLAMA_API bool llama_state_transaction_restore(
+            struct llama_context * ctx,
+            llama_state_transaction_t tx);
+
+    LLAMA_API bool llama_state_transaction_is_exact(
+            llama_state_transaction_t tx);
+
+    LLAMA_API void llama_state_transaction_free(
+            llama_state_transaction_t tx);
+
     // Save/load session file
     LLAMA_API bool llama_state_load_file(
             struct llama_context * ctx,
@@ -1052,6 +1074,23 @@ extern "C" {
     // when pooling_type == LLAMA_POOLING_TYPE_RANK, returns float[n_cls_out] with the rank(s) of the sequence
     // otherwise: float[n_embd] (1-dimensional)
     LLAMA_API float * llama_get_embeddings_seq(struct llama_context * ctx, llama_seq_id seq_id);
+
+    // Project a model-space direction through the loaded output matrix.
+    // This is an opt-in, read-only intervention primitive. Dimensions must
+    // match the loaded output tensor exactly; no reshape or truncation occurs.
+    LLAMA_API bool llama_context_project_output(
+            struct llama_context * ctx,
+              const float * direction,
+                         size_t direction_count,
+                         float * projected,
+                         size_t projected_count);
+
+    // Add a host-side residual to the last decoded logits row. Call only
+    // after the corresponding decode is synchronized and before sampling.
+    LLAMA_API bool llama_context_add_logits_residual(
+            struct llama_context * ctx,
+              const float * residual,
+                         size_t residual_count);
 
     //
     // backend sampling API [EXPERIMENTAL]

@@ -1,0 +1,15 @@
+{
+  "status": "not_validated",
+  "available_local_path": {
+    "query_capture": true,
+    "retrieval": true,
+    "public_cvec_dispatch": true,
+    "checkpoint": false,
+    "current_token_prepass": false,
+    "rollback": false,
+    "injected_replay_commit": false
+  },
+  "committed_replay_per_generated_token": "not_applicable_to_current_public_cvec_path",
+  "reason": "The public llama-server integration does not expose the context-local checkpoint/prepass/rollback/replay API required for full Step-29/30 C2. The profile rejects that capability instead of approximating it.",
+  "scientific_claim": "none"
+}

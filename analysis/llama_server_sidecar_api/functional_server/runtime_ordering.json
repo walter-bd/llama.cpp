@@ -1,0 +1,25 @@
+{
+  "status": "code_path_verified_and_smoked",
+  "trace_persisted": false,
+  "expected_order": [
+    "tentative current-token decode",
+    "result_norm query capture",
+    "Pz retrieval",
+    "authority calculation",
+    "exact transaction restore",
+    "hidden site 24 injection",
+    "hidden site 28 injection",
+    "final output projection",
+    "final logits residual",
+    "sample once",
+    "commit injected replay state"
+  ],
+  "implementation_guards": [
+    "sidecar requests are excluded from ordinary batching",
+    "prepass does not sample",
+    "transaction is freed after replay",
+    "sidecar cvec is cleared after each replay",
+    "sidecar is not mutated by chat"
+  ],
+  "limitation": "This artifact records the implementation ordering and end-to-end smoke, not a full per-token research telemetry trace."
+}

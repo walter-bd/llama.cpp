@@ -1,0 +1,33 @@
+{
+  "status": "pass",
+  "phase": "local engineering 1B",
+  "repository": "/home/walt/work/llama.cpp",
+  "branch": "sparse-residual-v0.1",
+  "target": "llama-server",
+  "build_directory": "build",
+  "build_command": "cmake --build build --config Release --target llama-server -j2",
+  "build_type": "Release",
+  "compiler": "c++ (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0",
+  "cmake": "cmake version 3.28.3",
+  "cuda_enabled": true,
+  "cuda_compiler": "Build cuda_12.0.r12.0/compiler.32267302_0",
+  "cuda_architectures": "75-real",
+  "cuda_options": {
+    "GGML_CUDA": true,
+    "GGML_CUDA_FA": true,
+    "GGML_CUDA_GRAPHS": true,
+    "GGML_CUDA_COMPRESSION_MODE": "size"
+  },
+  "gpu": {
+    "name": "NVIDIA GeForce GTX 1660 Ti with Max-Q Design",
+    "compute_capability": "7.5",
+    "driver": "580.173.02"
+  },
+  "executable": {
+    "path": "build/bin/llama-server",
+    "sha256": "28d5a56cb3ec2c943f7ea7b0462506b2fc566f45c87a8c9d85aad63063abe977"
+  },
+  "ui_build_note": "npm ci reported an existing Node engine mismatch; the configured UI archive fallback completed successfully.",
+  "remote_gpu_used": false,
+  "scientific_runtime_validation": "deferred to Phase 2"
+}

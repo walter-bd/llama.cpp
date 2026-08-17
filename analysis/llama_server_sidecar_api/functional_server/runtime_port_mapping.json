@@ -1,0 +1,79 @@
+{
+  "phase": "1F",
+  "source_commit": "f89d38962",
+  "source_branch": "research/step28-30-recursive-plasticity",
+  "mode_contract": {
+    "gguf": "ordinary llama.cpp inference",
+    "gguf_sparse_residual": "ordinary inference plus the existing sparse residual path",
+    "gguf_sidecar_plasticity": "sidecar reader/runtime without sparse residual; engineering-supported, scientifically untested",
+    "gguf_sparse_residual_sidecar_plasticity": "sparse residual plus plastic sidecar; historical validated configuration and later parity target"
+  },
+  "runtime_required": [
+    {
+      "validated_function": "trace_collector/eval_callback",
+      "validated_source": "examples/injection-depth-threshold/injection-depth-threshold.cpp",
+      "purpose": "Capture the last-token result_norm query and l_out-23/l_out-27 boundary activations.",
+      "server_target": "slot-local Qwen Step-30 query/calibration collector"
+    },
+    {
+      "validated_function": "run_stateful_step28",
+      "validated_source": "examples/factor-cache-persistence/factor-cache-persistence.cpp",
+      "purpose": "Checkpoint current state, prepass the current token, retrieve, restore, replay, and commit.",
+      "server_target": "sidecar-backed slot generation path"
+    },
+    {
+      "validated_function": "step27_bank::apply_source / retrieve",
+      "validated_source": "examples/closed-loop-sidecar-reasoning/closed-loop-sidecar-reasoning.cpp",
+      "purpose": "Compute source-partitioned r=Pz and preserve the existing bank reader.",
+      "server_target": "server_sidecar_manager runtime retrieval"
+    },
+    {
+      "validated_function": "normalized_weights({0.23072, 0.38322, 0.89438})",
+      "validated_source": "examples/factor-cache-persistence/factor-cache-persistence.cpp and examples/injection-sensitivity-allocation/multi-injection-support.inc",
+      "purpose": "Allocate the authority budget across the two hidden sites and final output site.",
+      "server_target": "Qwen Step-30 runtime profile"
+    },
+    {
+      "validated_function": "set_multi_internal_injection",
+      "validated_source": "examples/injection-sensitivity-allocation/multi-injection-support.inc",
+      "purpose": "Install calibrated hidden residuals at graph sites l_out-23 and l_out-27.",
+      "server_target": "existing llama adapter-cvec hook, isolated to sidecar replay"
+    },
+    {
+      "validated_function": "six-iteration local-rho calibration plus causal fallback",
+      "validated_source": "examples/injection-sensitivity-allocation/multi-injection-support.inc and examples/factor-cache-persistence/factor-cache-persistence.cpp",
+      "purpose": "Convert requested local rho values into site-specific hidden residual amplitudes.",
+      "server_target": "Qwen backend calibration; not HTTP-layer logic"
+    },
+    {
+      "validated_function": "output_projection / add_final_residual",
+      "validated_source": "examples/injection-depth-threshold/injection-depth-threshold.cpp and examples/factor-cache-persistence/factor-cache-persistence.cpp",
+      "purpose": "Project the final direction through the actual output matrix and add the final logits residual before sampling.",
+      "server_target": "llama_context_project_output plus llama_context_add_logits_residual"
+    },
+    {
+      "validated_function": "compute_gate_step30 / update_bank_step30",
+      "validated_source": "examples/integrated-recursive-plasticity/integrated-recursive-plasticity.cpp",
+      "purpose": "Apply the existing forward-only writer only after an external observed outcome.",
+      "server_target": "existing /v1/sidecar/observe path"
+    }
+  ],
+  "validation_only": [
+    "C1",
+    "C1a",
+    "C2q",
+    "clean comparator context",
+    "first-step equality gates",
+    "per-token serialized rollback hashing",
+    "protective prompt suite",
+    "scientific control arms and parity verdicts"
+  ],
+  "constants": {
+    "authority_max": 0.01,
+    "authority_reference_norm": 0.05,
+    "hidden_site_public_layers": [24, 28],
+    "hidden_site_graph_layers": [23, 27],
+    "injection_weights": [0.23072, 0.38322, 0.89438],
+    "writer_eta": 0.05
+  }
+}

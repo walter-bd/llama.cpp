@@ -1,0 +1,27 @@
+{
+  "phase": "local_phase_full_qwen",
+  "format_version": 1,
+  "status": "not_validated",
+  "research_ref": "research/step28-30-recursive-plasticity",
+  "research_commit": "f89d3896283721b947f086c24ee207f1ed1baea9",
+  "remote_gpu_used": false,
+  "raw_scientific_artifacts_modified": false,
+  "artifacts": [
+    "REPORT.md",
+    "summary.json",
+    "build_info.json",
+    "implementation_mapping.json",
+    "qwen35_profile.json",
+    "sidecar_v1_compatibility_audit.json",
+    "hook_dispatch.json",
+    "recursive_path_smoke.json",
+    "c2q_path_smoke.json",
+    "api_regression.json",
+    "multi_sidecar_recursive_isolation.json",
+    "compatibility_tests.json",
+    "changed_files.json",
+    "remote_validation_plan.md",
+    "expert_consultation.md",
+    "manifest.json"
+  ]
+}

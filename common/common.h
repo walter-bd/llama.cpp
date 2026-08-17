@@ -673,6 +673,7 @@ struct common_params {
 
     std::string slot_save_path;
     std::string media_path; // path to directory for loading media files
+    std::string sidecar_dir; // optional root for sidecar_v1 packages; empty disables sidecars
 
     float slot_prompt_similarity = 0.1f;
 

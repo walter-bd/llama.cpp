@@ -1,0 +1,36 @@
+{
+  "status": "partial",
+  "tests": [
+    {
+      "case": "compatible Qwen3.5 model and registered profile",
+      "status": "covered",
+      "evidence": "Phase 1 HTTP smoke now asserts profile_supported, profile ID, hidden-size-backed status, and site counts."
+    },
+    {
+      "case": "unknown profile",
+      "status": "source_audited",
+      "expected": "sidecar_injection_profile_not_supported"
+    },
+    {
+      "case": "architecture mismatch",
+      "status": "source_audited",
+      "expected": "sidecar_injection_profile_not_supported"
+    },
+    {
+      "case": "hidden dimension mismatch",
+      "status": "source_audited",
+      "expected": "sidecar_injection_profile_not_supported"
+    },
+    {
+      "case": "insufficient layer count",
+      "status": "source_audited",
+      "expected": "sidecar_injection_profile_not_supported"
+    },
+    {
+      "case": "identity adapter dimension mismatch",
+      "status": "source_audited",
+      "expected": "sidecar_representation_dimension_mismatch"
+    }
+  ],
+  "live_incompatible_model_fixtures": "not available in the local smoke run"
+}

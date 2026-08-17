@@ -6,10 +6,13 @@
 #include "server-queue.h"
 #include "server-schema.h"
 #include "server-stream.h"
+#include "server-sidecar.h"
 
 #include "build-info.h"
 #include "common.h"
 #include "fit.h"
+#include "ggml-backend.h"
+#include "ggml.h"
 #include "llama.h"
 #include "log.h"
 #include "sampling.h"
@@ -18,9 +21,13 @@
 #include "mtmd-helper.h"
 
 #include <algorithm>
+#include <array>
 #include <cstddef>
 #include <cinttypes>
+#include <cstdio>
+#include <cmath>
 #include <exception>
+#include <map>
 #include <memory>
 #include <filesystem>
 #include <utility>
@@ -36,6 +43,153 @@
 #endif
 
 using json = nlohmann::ordered_json;
+
+namespace {
+
+constexpr std::array<int32_t, 7> SIDECAR_INTERNAL_LAYERS = { 3, 7, 11, 15, 19, 23, 27 };
+
+float sidecar_tensor_value(const uint8_t * data, enum ggml_type type, size_t offset) {
+    if (type == GGML_TYPE_F32) {
+        return *reinterpret_cast<const float *>(data + offset);
+    }
+    if (type == GGML_TYPE_F16) {
+        return ggml_fp16_to_fp32(*reinterpret_cast<const ggml_fp16_t *>(data + offset));
+    }
+    if (type == GGML_TYPE_BF16) {
+        return ggml_bf16_to_fp32(*reinterpret_cast<const ggml_bf16_t *>(data + offset));
+    }
+    throw std::runtime_error("unsupported sidecar activation type");
+}
+
+std::vector<float> sidecar_copy_last_vector(ggml_tensor * tensor) {
+    if (tensor == nullptr ||
+            (tensor->type != GGML_TYPE_F32 &&
+             tensor->type != GGML_TYPE_F16 &&
+             tensor->type != GGML_TYPE_BF16)) {
+        throw std::runtime_error("unsupported sidecar callback tensor type");
+    }
+
+    std::vector<uint8_t> copied;
+    const uint8_t * data = nullptr;
+    if (ggml_backend_buffer_is_host(tensor->buffer)) {
+        data = static_cast<const uint8_t *>(tensor->data);
+    } else {
+        copied.resize(ggml_nbytes(tensor));
+        ggml_backend_tensor_get(tensor, copied.data(), 0, copied.size());
+        data = copied.data();
+    }
+
+    const int64_t count = tensor->ne[1] * tensor->ne[2] * tensor->ne[3];
+    const int64_t vector = std::max<int64_t>(0, count - 1);
+    const int64_t i1 = vector % tensor->ne[1];
+    const int64_t rem = vector / tensor->ne[1];
+    const int64_t i2 = rem % tensor->ne[2];
+    const int64_t i3 = rem / tensor->ne[2];
+
+    std::vector<float> out(tensor->ne[0]);
+    for (int64_t i0 = 0; i0 < tensor->ne[0]; ++i0) {
+        const size_t offset =
+            i3 * tensor->nb[3] + i2 * tensor->nb[2] + i1 * tensor->nb[1] + i0 * tensor->nb[0];
+        out[i0] = sidecar_tensor_value(data, tensor->type, offset);
+    }
+    return out;
+}
+
+struct server_sidecar_trace_collector {
+    bool enabled = false;
+    std::vector<float> final_hidden;
+    std::map<int32_t, std::vector<float>> boundaries;
+    int callback_asks = 0;
+    int callback_values = 0;
+    bool saw_result_norm_ask = false;
+    bool saw_result_norm_value = false;
+    bool saw_result_norm_alias = false;
+    bool saw_result_like = false;
+    std::vector<std::string> result_like_names;
+    std::vector<std::string> observed_names;
+
+    void clear() {
+        final_hidden.clear();
+        boundaries.clear();
+        callback_asks = 0;
+        callback_values = 0;
+        saw_result_norm_ask = false;
+        saw_result_norm_value = false;
+        saw_result_norm_alias = false;
+        saw_result_like = false;
+        result_like_names.clear();
+        observed_names.clear();
+    }
+};
+
+bool server_sidecar_eval_callback(ggml_tensor * tensor, bool ask, void * user_data) {
+    auto & collector = *static_cast<server_sidecar_trace_collector *>(user_data);
+    if (!collector.enabled || tensor == nullptr) {
+        return false;
+    }
+
+    const std::string name(tensor->name);
+    if (ask) {
+        collector.callback_asks++;
+    } else {
+        collector.callback_values++;
+    }
+    if (collector.observed_names.size() < 512 &&
+            std::find(collector.observed_names.begin(), collector.observed_names.end(), name) ==
+                collector.observed_names.end()) {
+        collector.observed_names.push_back(name);
+    }
+    if (name.find("result") != std::string::npos) {
+        collector.saw_result_like = true;
+        if (collector.result_like_names.size() < 64 &&
+                std::find(collector.result_like_names.begin(), collector.result_like_names.end(), name) ==
+                    collector.result_like_names.end()) {
+            collector.result_like_names.push_back(name);
+        }
+    }
+    // With embeddings enabled and no pooling, llama.cpp reuses the exact
+    // result_norm tensor for the generic pooled-embedding output and renames
+    // it result_embd_pooled. Keep both names as the validated Qwen query.
+    const bool is_result_norm = name == "result_norm";
+    const bool is_result_norm_alias = name == "result_embd_pooled";
+    if (is_result_norm || is_result_norm_alias) {
+        if (ask) {
+            collector.saw_result_norm_ask = true;
+            collector.saw_result_norm_alias = is_result_norm_alias;
+            return true;
+        }
+        collector.saw_result_norm_value = true;
+        collector.saw_result_norm_alias = is_result_norm_alias;
+        collector.final_hidden = sidecar_copy_last_vector(tensor);
+        return true;
+    }
+
+    if (name.rfind("l_out-", 0) != 0) {
+        return false;
+    }
+
+    int32_t layer = -1;
+    if (std::sscanf(name.c_str(), "l_out-%d", &layer) != 1 ||
+            std::find(SIDECAR_INTERNAL_LAYERS.begin(), SIDECAR_INTERNAL_LAYERS.end(), layer) ==
+                SIDECAR_INTERNAL_LAYERS.end()) {
+        return false;
+    }
+    if (ask) {
+        return true;
+    }
+    collector.boundaries[layer] = sidecar_copy_last_vector(tensor);
+    return true;
+}
+
+double sidecar_l2(const std::vector<float> & values) {
+    double total = 0.0;
+    for (const float value : values) {
+        total += double(value) * double(value);
+    }
+    return std::sqrt(total);
+}
+
+} // namespace
 
 constexpr int HTTP_POLLING_SECONDS = 1;
 
@@ -217,7 +371,12 @@ struct server_slot {
     // TODO: move members that belong to the task (such as `generated_text`, `has_new_line`) to task_results_state
     //       see https://github.com/ggml-org/llama.cpp/pull/18283#issuecomment-3710175837
     std::unique_ptr<const server_task> task;
+
+    // Sidecar transactions are request/slot-local.  The portable bank never
+    // owns this transient llama state.
+    llama_state_transaction_t sidecar_transaction = nullptr;
     std::unique_ptr<const server_task> task_prev; // used for debugging
+    std::string sidecar_episode_id;
 
     // used to determine the slot that has been used the longest
     int64_t t_last_used = -1;
@@ -325,6 +484,11 @@ struct server_slot {
     void reset() {
         SLT_DBG(*this, "%s", "\n");
 
+        if (sidecar_transaction != nullptr) {
+            llama_state_transaction_free(sidecar_transaction);
+            sidecar_transaction = nullptr;
+        }
+
         spec_is_replay = false;
 
         last_nl_pos    = 0;
@@ -346,6 +510,7 @@ struct server_slot {
 
         task_prev = std::move(task);
         task.reset();
+        sidecar_episode_id.clear();
 
         // note: callback_on_reset() must have run before this, see release()
         stats = {};
@@ -404,6 +569,10 @@ struct server_slot {
 
     bool can_batch_with(server_slot & other_slot) const {
         GGML_ASSERT(task);
+
+        if (!task->params.sidecar_id.empty() || !other_slot.task->params.sidecar_id.empty()) {
+            return false;
+        }
 
         return task->type == other_slot.task->type
             && inp_embd.size() == other_slot.inp_embd.size()
@@ -800,6 +969,8 @@ public:
 
     server_queue    queue_tasks;
     server_response queue_results;
+    server_sidecar_manager sidecars;
+    server_sidecar_trace_collector sidecar_trace;
 
     // note: chat_params must not be refreshed upon existing sleeping state
     server_chat_params chat_params;
@@ -880,6 +1051,22 @@ private:
     int64_t t_last_load_progress_ms = 0;
 
     void destroy() {
+        for (auto & slot : slots) {
+            if (slot.sidecar_transaction != nullptr) {
+                llama_state_transaction_free(slot.sidecar_transaction);
+                slot.sidecar_transaction = nullptr;
+            }
+        }
+        sidecar_trace.enabled = false;
+        sidecar_trace.clear();
+
+        // The hidden injection hook is context-global.  Clear it before
+        // releasing the context, and discard sidecar episodes tied to the old
+        // model.
+        sidecars.clear_context(ctx_tgt);
+        sidecars.invalidate_episodes();
+        sidecars.configure(nullptr, params_base.sidecar_dir);
+
         spec.reset();
         spec_init.reset();
 
@@ -954,6 +1141,19 @@ private:
         const auto output_limits = server_output_limits(params_base);
         params_base.n_outputs_max = output_limits.total;
         params_base.n_outputs_max_per_seq = output_limits.per_seq;
+
+        // Sidecar queries use the embedding output for every token in a decode
+        // batch. Reserve enough output slots for a full logical batch; ordinary
+        // requests still leave embeddings disabled and follow the normal path.
+        if (!params_base.sidecar_dir.empty()) {
+            params_base.n_outputs_max = std::max(params_base.n_outputs_max, params_base.n_batch);
+            params_base.n_outputs_max_per_seq = std::max(params_base.n_outputs_max_per_seq, params_base.n_batch);
+            params_base.cb_eval = server_sidecar_eval_callback;
+            params_base.cb_eval_user_data = &sidecar_trace;
+        }
+
+        sidecar_trace.enabled = false;
+        sidecar_trace.clear();
 
         const bool has_mmproj = !params.mmproj.path.empty();
         const bool has_draft = params.speculative.has_dft();
@@ -1104,6 +1304,8 @@ private:
             SRV_ERR("failed to create_context with model '%s'\n", params_base.model.path.c_str());
             return false;
         }
+
+        sidecars.configure(model_tgt, params_base.sidecar_dir);
 
         vocab = llama_model_get_vocab(model_tgt);
 
@@ -1264,6 +1466,12 @@ private:
             };
 
             slot.callback_on_reset = [this](const server_slot & slot) {
+                sidecars.clear_context(ctx_tgt);
+                sidecar_trace.enabled = false;
+                sidecar_trace.clear();
+                // An episode is intentionally request-scoped, not slot-scoped:
+                // the client observes it after the generation response.
+
                 // flush the generated token stats before reset()
                 if (slot.stats.n_gen > 0) {
                     metrics_on_prediction(slot);
@@ -2078,6 +2286,7 @@ private:
         }
 
         res->generation_params = slot.task->params; // copy the parameters
+        res->sidecar_episode_id = slot.sidecar_episode_id;
 
         queue_results.send(std::move(res));
     }
@@ -2767,7 +2976,13 @@ private:
                 slot_batched->lora[alora_disabled_id].scale = alora_scale;
             }
 
-            llama_set_embeddings(ctx_tgt, slot_batched->need_embd());
+            // The validated sidecar query is the model's result_norm output.
+            // Expose embeddings only for sidecar-backed requests so the
+            // ordinary GGUF and residual-only paths keep their existing graph
+            // and output behavior.
+            const bool sidecar_embeddings = slot_batched->task != nullptr &&
+                !slot_batched->task->params.sidecar_id.empty();
+            llama_set_embeddings(ctx_tgt, slot_batched->need_embd() || sidecar_embeddings);
         }
 
         llama_batch batch_view;
@@ -3433,6 +3648,16 @@ private:
                             break; // end of text chunk
                         }
 
+                        // The final prompt token produces the first sampled
+                        // token. Keep it in its own batch for sidecar requests
+                        // so the same transactional prepass/replay path also
+                        // covers the first generated token.
+                        if (!slot.task->params.sidecar_id.empty() &&
+                                slot.prompt.n_tokens() + 1 == slot.task->n_tokens() &&
+                                batch.size() > n_tokens_prev) {
+                            break;
+                        }
+
                         // if this is an alora request with pre-invocation
                         // tokens that are not cached, we need to stop filling
                         // this batch at those pre-invocation tokens.
@@ -3547,6 +3772,294 @@ private:
         }
     }
 
+    server_slot * sidecar_slot_for_batch(int32_t off, const llama_batch & batch_view) {
+        server_slot * result = nullptr;
+        for (auto & slot : slots) {
+            if (slot.task == nullptr ||
+                    (slot.state != SLOT_STATE_GENERATING && slot.state != SLOT_STATE_DONE_PROMPT) ||
+                    slot.task->params.sidecar_id.empty()) {
+                continue;
+            }
+            if (slot.i_batch < off || slot.i_batch >= off + batch_view.n_tokens) {
+                continue;
+            }
+            if (result != nullptr) {
+                throw std::runtime_error("multiple sidecar slots entered one decode batch");
+            }
+            result = &slot;
+        }
+        return result;
+    }
+
+    void decode_sidecar_replay(llama_batch & batch_view) {
+        int ret = 0;
+        queue_tasks.yield_to_queue([&]() {
+            ret = llama_decode(ctx_tgt, batch_view);
+            if (ret == 0) {
+                llama_synchronize(ctx_tgt);
+            }
+        });
+        if (ret != 0) {
+            throw std::runtime_error("sidecar replay decode failed with code " + std::to_string(ret));
+        }
+    }
+
+    void execute_sidecar_runtime(server_slot & slot, llama_batch & batch_view) {
+        if (slot.sidecar_transaction == nullptr) {
+            throw std::runtime_error("sidecar runtime transaction is unavailable");
+        }
+        if (batch_view.n_tokens != 1) {
+            throw std::runtime_error("sidecar runtime requires one current token per slot transaction");
+        }
+
+        const int32_t width = llama_model_n_embd(model_tgt);
+        if ((int32_t) sidecar_trace.final_hidden.size() != width) {
+            std::string observed;
+            for (const auto & name : sidecar_trace.observed_names) {
+                if (!observed.empty()) {
+                    observed += ",";
+                }
+                observed += name;
+            }
+            throw std::runtime_error(
+                "sidecar runtime did not capture result_norm from the prepass; callback_asks=" +
+                std::to_string(sidecar_trace.callback_asks) +
+                ", callback_values=" + std::to_string(sidecar_trace.callback_values) +
+                ", saw_result_norm_ask=" + (sidecar_trace.saw_result_norm_ask ? "true" : "false") +
+                ", saw_result_norm_value=" + (sidecar_trace.saw_result_norm_value ? "true" : "false") +
+                ", saw_result_like=" + (sidecar_trace.saw_result_like ? "true" : "false") +
+                ", result_like=" + [&]() {
+                    std::string names;
+                    for (const auto & name : sidecar_trace.result_like_names) {
+                        if (!names.empty()) {
+                            names += ",";
+                        }
+                        names += name;
+                    }
+                    return names.empty() ? std::string("<none>") : names;
+                }() +
+                ", observed=" + (observed.empty() ? std::string("<none>") : observed));
+        }
+
+        const auto transaction = slot.sidecar_transaction;
+        const auto sidecar_id = slot.task->params.sidecar_id;
+        bool transaction_finished = false;
+
+        auto finish = [&]() {
+            std::string clear_error;
+            if (!sidecars.clear_runtime_hidden(ctx_tgt, width, clear_error) && !clear_error.empty()) {
+                throw std::runtime_error(clear_error);
+            }
+            sidecar_trace.enabled = false;
+            slot.sidecar_transaction = nullptr;
+            llama_state_transaction_free(transaction);
+            transaction_finished = true;
+        };
+
+        auto restore_checkpoint = [&]() {
+            std::string clear_error;
+            if (!sidecars.clear_runtime_hidden(ctx_tgt, width, clear_error)) {
+                throw std::runtime_error(clear_error);
+            }
+            sidecar_trace.clear();
+            if (!llama_state_transaction_restore(ctx_tgt, transaction) ||
+                    !llama_state_transaction_is_exact(transaction)) {
+                throw std::runtime_error("sidecar runtime transaction restore was not exact");
+            }
+            sidecar_trace.enabled = true;
+        };
+
+        try {
+            server_sidecar_runtime_step step;
+            std::string episode_id = slot.sidecar_episode_id;
+            std::string error;
+            std::vector<float> query;
+            if (!sidecars.capture_query(
+                        sidecar_id, ctx_tgt, 0, width, query, error)) {
+                throw std::runtime_error(error);
+            }
+            if (query.size() != sidecar_trace.final_hidden.size()) {
+                throw std::runtime_error("sidecar query capture width mismatch");
+            }
+            if (!sidecars.prepare_runtime_step(
+                        sidecar_id, query.data(), width,
+                        &episode_id, step, error)) {
+                throw std::runtime_error(error);
+            }
+            slot.sidecar_episode_id = std::move(episode_id);
+
+            // An empty bank response still follows the same transaction path,
+            // but has no hidden or output intervention.
+            if (step.raw_norm <= 1e-12) {
+                restore_checkpoint();
+                sidecar_trace.enabled = false;
+                decode_sidecar_replay(batch_view);
+                finish();
+                return;
+            }
+
+            if (step.direction.size() != size_t(width) ||
+                    sidecar_trace.boundaries.count(23) == 0 ||
+                    sidecar_trace.boundaries.count(27) == 0) {
+                throw std::runtime_error("sidecar runtime did not capture validated internal boundaries");
+            }
+
+            const auto weights = server_sidecar_validated_topology::normalized_runtime_weights();
+            const std::array<double, 3> requested_rho = {
+                step.budget * weights[0],
+                step.budget * weights[1],
+                step.budget * weights[2],
+            };
+            std::array<double, 2> norms = {
+                sidecar_l2(sidecar_trace.boundaries.at(23)),
+                sidecar_l2(sidecar_trace.boundaries.at(27)),
+            };
+            constexpr double local_rho_tolerance = 2e-6;
+            constexpr int max_norm_iterations = 6;
+            bool converged = false;
+
+            for (int iteration = 0; iteration < max_norm_iterations; ++iteration) {
+                restore_checkpoint();
+                const std::array<double, 2> alphas = {
+                    requested_rho[0] * norms[0],
+                    requested_rho[1] * norms[1],
+                };
+                if (!sidecars.apply_runtime_hidden(
+                            sidecar_id, ctx_tgt, step.direction.data(), width, alphas, error)) {
+                    throw std::runtime_error(error);
+                }
+                decode_sidecar_replay(batch_view);
+                sidecar_trace.enabled = false;
+                if (!sidecars.clear_runtime_hidden(ctx_tgt, width, error)) {
+                    throw std::runtime_error(error);
+                }
+                if (sidecar_trace.boundaries.count(23) == 0 ||
+                        sidecar_trace.boundaries.count(27) == 0) {
+                    throw std::runtime_error("sidecar runtime replay did not capture internal boundaries");
+                }
+
+                std::array<double, 2> measured{};
+                double max_error = 0.0;
+                const std::array<int32_t, 2> layers = { 23, 27 };
+                for (size_t i = 0; i < layers.size(); ++i) {
+                    auto pre = sidecar_trace.boundaries.at(layers[i]);
+                    if (pre.size() != step.direction.size()) {
+                        throw std::runtime_error("sidecar runtime boundary width mismatch");
+                    }
+                    for (size_t j = 0; j < pre.size(); ++j) {
+                        pre[j] -= float(alphas[i] * double(step.direction[j]));
+                    }
+                    measured[i] = sidecar_l2(pre);
+                    const double actual = measured[i] > 0.0 ? std::abs(alphas[i]) / measured[i] : 0.0;
+                    max_error = std::max(max_error, std::abs(actual - requested_rho[i]));
+                }
+                norms = measured;
+                if (max_error <= local_rho_tolerance) {
+                    converged = true;
+                    break;
+                }
+            }
+
+            if (!converged) {
+                // The validated runtime uses a causal shallow-to-deep fallback
+                // when the simultaneous fixed-point calibration oscillates.
+                const double shallow_norm = norms[0];
+                restore_checkpoint();
+                std::array<double, 2> alphas = { 0.0, 0.0 };
+                for (size_t i = 0; i < alphas.size(); ++i) {
+                    if (i > 0 && !sidecars.apply_runtime_hidden(
+                                sidecar_id, ctx_tgt, step.direction.data(), width, alphas, error)) {
+                        throw std::runtime_error(error);
+                    }
+                    if (i > 0) {
+                        decode_sidecar_replay(batch_view);
+                        sidecar_trace.enabled = false;
+                        if (!sidecars.clear_runtime_hidden(ctx_tgt, width, error)) {
+                            throw std::runtime_error(error);
+                        }
+                        if (sidecar_trace.boundaries.count(27) == 0) {
+                            throw std::runtime_error("sidecar fallback did not capture the deep boundary");
+                        }
+                        norms[i] = sidecar_l2(sidecar_trace.boundaries.at(27));
+                        restore_checkpoint();
+                    } else {
+                        norms[i] = shallow_norm;
+                    }
+                    alphas[i] = requested_rho[i] * norms[i];
+                }
+                restore_checkpoint();
+                if (!sidecars.apply_runtime_hidden(
+                            sidecar_id, ctx_tgt, step.direction.data(), width, alphas, error)) {
+                    throw std::runtime_error(error);
+                }
+                decode_sidecar_replay(batch_view);
+                sidecar_trace.enabled = false;
+                if (!sidecars.clear_runtime_hidden(ctx_tgt, width, error)) {
+                    throw std::runtime_error(error);
+                }
+                double max_error = 0.0;
+                const std::array<int32_t, 2> layers = { 23, 27 };
+                for (size_t i = 0; i < layers.size(); ++i) {
+                    auto pre = sidecar_trace.boundaries.at(layers[i]);
+                    for (size_t j = 0; j < pre.size(); ++j) {
+                        pre[j] -= float(alphas[i] * double(step.direction[j]));
+                    }
+                    norms[i] = sidecar_l2(pre);
+                    const double actual = norms[i] > 0.0 ? std::abs(alphas[i]) / norms[i] : 0.0;
+                    max_error = std::max(max_error, std::abs(actual - requested_rho[i]));
+                }
+                if (max_error > local_rho_tolerance) {
+                    throw std::runtime_error("sidecar local-rho calibration exceeded tolerance");
+                }
+            }
+
+            restore_checkpoint();
+            const std::array<double, 2> final_alphas = {
+                requested_rho[0] * norms[0],
+                requested_rho[1] * norms[1],
+            };
+            if (!sidecars.apply_runtime_hidden(
+                        sidecar_id, ctx_tgt, step.direction.data(), width, final_alphas, error)) {
+                throw std::runtime_error(error);
+            }
+            decode_sidecar_replay(batch_view);
+            sidecar_trace.enabled = false;
+            if (!sidecars.clear_runtime_hidden(ctx_tgt, width, error)) {
+                throw std::runtime_error(error);
+            }
+            if ((int32_t) sidecar_trace.final_hidden.size() != width) {
+                throw std::runtime_error("sidecar runtime replay did not capture result_norm");
+            }
+
+            const double final_norm = sidecar_l2(sidecar_trace.final_hidden);
+            const double final_alpha = requested_rho[2] * final_norm;
+            const int32_t n_vocab = llama_vocab_n_tokens(vocab);
+            std::vector<float> projected(static_cast<size_t>(n_vocab));
+            std::vector<float> residual(static_cast<size_t>(n_vocab));
+            if (!llama_context_project_output(
+                        ctx_tgt, step.direction.data(), step.direction.size(),
+                        projected.data(), projected.size())) {
+                throw std::runtime_error("sidecar final output projection failed");
+            }
+            for (size_t i = 0; i < projected.size(); ++i) {
+                residual[i] = float(final_alpha * double(projected[i]));
+            }
+            if (!llama_context_add_logits_residual(ctx_tgt, residual.data(), residual.size())) {
+                throw std::runtime_error("sidecar final logits residual failed");
+            }
+            finish();
+        } catch (...) {
+            sidecar_trace.enabled = false;
+            std::string clear_error;
+            sidecars.clear_runtime_hidden(ctx_tgt, width, clear_error);
+            if (!transaction_finished) {
+                slot.sidecar_transaction = nullptr;
+                llama_state_transaction_free(transaction);
+            }
+            throw;
+        }
+    }
+
     // returns true = success ; false = retry with smaller batch size
     // throw std::runtime_error on fatal error
     bool decode(int32_t & n_batch, int32_t off, llama_batch & batch_view) {
@@ -3580,6 +4093,29 @@ private:
             has_output |= batch.tokens[i].output;
         }
 
+        // A sidecar-generated token is evaluated transactionally: the first
+        // decode is a no-sample prepass, and post_decode() performs the
+        // validated replay before sampling.  Prompt processing remains on the
+        // ordinary path and therefore does not need a transaction.
+        server_slot * sidecar_slot = sidecar_slot_for_batch(off, batch_view);
+        if (sidecar_slot != nullptr) {
+            if (batch_view.n_tokens != 1) {
+                throw std::runtime_error("sidecar runtime requires an exclusive single-token batch");
+            }
+
+            std::string clear_error;
+            if (!sidecars.clear_runtime_hidden(ctx_tgt, llama_model_n_embd(model_tgt), clear_error)) {
+                throw std::runtime_error(clear_error);
+            }
+            sidecar_trace.clear();
+            sidecar_trace.enabled = true;
+            sidecar_slot->sidecar_transaction = llama_state_transaction_begin(ctx_tgt);
+            if (sidecar_slot->sidecar_transaction == nullptr) {
+                sidecar_trace.enabled = false;
+                throw std::runtime_error("failed to begin sidecar runtime transaction");
+            }
+        }
+
         // yield to the queue, so we can still handle metrics tasks while decoding
         // note: the sync is done here too, so that the wait is also covered by the yield
         int ret = 0;
@@ -3589,6 +4125,16 @@ private:
                 llama_synchronize(ctx_tgt);
             }
         });
+
+        if (sidecar_slot != nullptr) {
+            sidecar_trace.enabled = false;
+            if (ret != 0) {
+                std::string clear_error;
+                sidecars.clear_runtime_hidden(ctx_tgt, llama_model_n_embd(model_tgt), clear_error);
+                llama_state_transaction_free(sidecar_slot->sidecar_transaction);
+                sidecar_slot->sidecar_transaction = nullptr;
+            }
+        }
 
         if (ret != 0) {
             {
@@ -3750,6 +4296,10 @@ private:
 
             if (slot.can_speculate() && !slot.spec_draft.empty()) {
                 return; // sample using speculative decoding
+            }
+
+            if (slot.sidecar_transaction != nullptr) {
+                execute_sidecar_runtime(slot, batch_view);
             }
 
             // shifted according to the current sub-batch
@@ -4216,6 +4766,24 @@ std::unique_ptr<server_res_generator> server_routes::handle_completions_impl(
                     meta->logit_bias_eog,
                     data);
 
+            task.params.sidecar_id = json_value(data, "sidecar_id", std::string());
+            if (!task.params.sidecar_id.empty()) {
+                const bool speculative = std::any_of(
+                        params.speculative.types.begin(), params.speculative.types.end(),
+                        [](common_speculative_type type) {
+                            return type != COMMON_SPECULATIVE_TYPE_NONE;
+                        });
+                std::string sidecar_error;
+                if (!ctx_server.sidecars.validate_request(
+                        task.params.sidecar_id,
+                        params.n_parallel,
+                        task.params.n_cmpl,
+                        speculative,
+                        sidecar_error)) {
+                    throw std::invalid_argument(sidecar_error);
+                }
+            }
+
             task.params.message_spans = task.tokens.find_message_spans(delimiters);
 
             task.id_slot = json_value(data, "id_slot", -1);
@@ -4435,6 +5003,160 @@ server_routes::server_routes(const common_params & params, server_context & ctx_
 void server_routes::init_routes() {
     // IMPORTANT: all lambda functions must start with create_response()
     // this is to ensure that the server_res_generator can handle sleeping case correctly
+
+    auto sidecar_response = [](const json & body, int status = 200) {
+        auto res = std::make_unique<server_http_res>();
+        res->status = status;
+        res->data = safe_json_to_str(body);
+        return res;
+    };
+
+    auto sidecar_error = [](const std::string & message, int status = 400) {
+        auto res = std::make_unique<server_http_res>();
+        res->status = status;
+        res->data = safe_json_to_str({
+            {"error", format_error_response(message, status == 400 ? ERROR_TYPE_INVALID_REQUEST : ERROR_TYPE_SERVER)}
+        });
+        return res;
+    };
+
+    auto sidecar_body = [](const server_http_req & req) {
+        return req.body.empty() ? json::object() : json::parse(req.body);
+    };
+
+    auto required_sidecar_id = [](const json & body) {
+        const std::string id = json_value(body, "id", std::string());
+        if (id.empty()) {
+            throw std::invalid_argument("missing sidecar id");
+        }
+        return id;
+    };
+
+    auto required_sidecar_path = [](const json & body) {
+        const std::string path = json_value(body, "path", std::string());
+        if (path.empty()) {
+            throw std::invalid_argument("missing sidecar path");
+        }
+        return path;
+    };
+
+    this->get_sidecar_status = [this, sidecar_response, sidecar_error](const server_http_req & req) {
+        try {
+            return sidecar_response(ctx_server.sidecars.status(req.get_param("id")));
+        } catch (const std::exception & e) {
+            return sidecar_error(e.what());
+        }
+    };
+
+    this->post_sidecar_create = [this, sidecar_body, required_sidecar_id, sidecar_response, sidecar_error](const server_http_req & req) {
+        try {
+            const json body = sidecar_body(req);
+            return sidecar_response(ctx_server.sidecars.create(
+                required_sidecar_id(body),
+                json_value(body, "learning_enabled", false)));
+        } catch (const std::exception & e) {
+            return sidecar_error(e.what());
+        }
+    };
+
+    this->post_sidecar_load = [this, sidecar_body, required_sidecar_id, required_sidecar_path, sidecar_response, sidecar_error](const server_http_req & req) {
+        try {
+            const json body = sidecar_body(req);
+            return sidecar_response(ctx_server.sidecars.load(
+                required_sidecar_id(body),
+                required_sidecar_path(body),
+                json_value(body, "learning_enabled", false)));
+        } catch (const std::exception & e) {
+            return sidecar_error(e.what());
+        }
+    };
+
+    this->post_sidecar_save = [this, sidecar_body, required_sidecar_id, required_sidecar_path, sidecar_response, sidecar_error](const server_http_req & req) {
+        try {
+            const json body = sidecar_body(req);
+            return sidecar_response(ctx_server.sidecars.save(
+                required_sidecar_id(body), required_sidecar_path(body)));
+        } catch (const std::exception & e) {
+            return sidecar_error(e.what());
+        }
+    };
+
+    this->post_sidecar_reset = [this, sidecar_body, required_sidecar_id, sidecar_response, sidecar_error](const server_http_req & req) {
+        try {
+            return sidecar_response(ctx_server.sidecars.reset(required_sidecar_id(sidecar_body(req))));
+        } catch (const std::exception & e) {
+            return sidecar_error(e.what());
+        }
+    };
+
+    this->post_sidecar_unload = [this, sidecar_body, required_sidecar_id, sidecar_response, sidecar_error](const server_http_req & req) {
+        try {
+            return sidecar_response(ctx_server.sidecars.unload(required_sidecar_id(sidecar_body(req))));
+        } catch (const std::exception & e) {
+            return sidecar_error(e.what());
+        }
+    };
+
+    this->post_sidecar_learning = [this, sidecar_body, required_sidecar_id, sidecar_response, sidecar_error](const server_http_req & req) {
+        try {
+            const json body = sidecar_body(req);
+            return sidecar_response(ctx_server.sidecars.set_learning(
+                required_sidecar_id(body),
+                json_value(body, "enabled", false)));
+        } catch (const std::exception & e) {
+            return sidecar_error(e.what());
+        }
+    };
+
+    this->post_sidecar_observe = [this, sidecar_body, required_sidecar_id, sidecar_response, sidecar_error](const server_http_req & req) {
+        try {
+            const json body = sidecar_body(req);
+            const auto id = required_sidecar_id(body);
+            const std::string episode_id = json_value(body, "episode_id", std::string());
+            const std::string observed_target = json_value(body, "observed_target", std::string());
+            if (episode_id.empty() || observed_target.empty()) {
+                throw std::invalid_argument("missing episode_id or observed_target");
+            }
+
+            std::vector<float> write_direction;
+            const json direction = json_value(body, "write_direction", json::array());
+            if (!direction.is_array()) {
+                throw std::invalid_argument("write_direction must be an array");
+            }
+            write_direction.reserve(direction.size());
+            for (const auto & value : direction) {
+                if (!value.is_number()) {
+                    throw std::invalid_argument("write_direction must contain only numbers");
+                }
+                write_direction.push_back(value.get<float>());
+            }
+
+            return sidecar_response(ctx_server.sidecars.observe(
+                id,
+                episode_id,
+                observed_target,
+                json_value(body, "source", std::string()),
+                write_direction,
+                json_value(body, "novelty", 0.0),
+                json_value(body, "surprise", 0.0),
+                json_value(body, "recurrence", 0.0),
+                json_value(body, "consistency", 0.0)));
+        } catch (const std::exception & e) {
+            return sidecar_error(e.what());
+        }
+    };
+
+    this->delete_sidecar = [this, sidecar_response, sidecar_error](const server_http_req & req) {
+        try {
+            const std::string id = req.get_param("id");
+            if (id.empty()) {
+                throw std::invalid_argument("missing sidecar id");
+            }
+            return sidecar_response(ctx_server.sidecars.erase(id));
+        } catch (const std::exception & e) {
+            return sidecar_error(e.what());
+        }
+    };
 
     this->get_health = [this](const server_http_req &) {
         // error and loading states are handled by middleware
@@ -4737,6 +5459,9 @@ void server_routes::init_routes() {
             body,
             meta->chat_params,
             files);
+        if (body.contains("sidecar_id")) {
+            body_parsed["sidecar_id"] = body.at("sidecar_id");
+        }
         return handle_completions_impl(
             req,
             SERVER_TASK_TYPE_COMPLETION,

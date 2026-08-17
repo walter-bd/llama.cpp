@@ -1,0 +1,29 @@
+{
+  "status": "not_validated",
+  "ordinary_server_path": "pass",
+  "current_sidecar_path": "post_decode_query_then_public_cvec_for_next_decode",
+  "required_step30_path": [
+    "checkpoint",
+    "current_token_prepass",
+    "stateful_query",
+    "retrieval",
+    "rollback",
+    "calibrated_site24_site28_injection",
+    "final_logit_residual",
+    "injected_replay",
+    "single_commit"
+  ],
+  "current_supported": {
+    "checkpoint": false,
+    "prepass": false,
+    "stateful_query": false,
+    "retrieval": true,
+    "rollback": false,
+    "calibrated_internal_sites": false,
+    "final_logit_residual": false,
+    "injected_replay": false,
+    "single_commit": false
+  },
+  "committed_replay_count": null,
+  "scientific_claim": "none"
+}

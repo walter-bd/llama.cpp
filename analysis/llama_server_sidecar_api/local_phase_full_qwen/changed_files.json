@@ -1,0 +1,40 @@
+{
+  "phase1c_source_files_modified_in_this_turn": [],
+  "preexisting_server_files_preserved": [
+    "common/arg.cpp",
+    "common/common.h",
+    "tools/server/CMakeLists.txt",
+    "tools/server/server-context.cpp",
+    "tools/server/server-context.h",
+    "tools/server/server-task.cpp",
+    "tools/server/server-task.h",
+    "tools/server/server.cpp",
+    "tools/server/server-sidecar-profile.cpp",
+    "tools/server/server-sidecar-profile.h",
+    "tools/server/server-sidecar.cpp",
+    "tools/server/server-sidecar.h",
+    "tools/server/tests/utils.py",
+    "tools/server/sidecar_client.py",
+    "tools/server/tests/sidecar_api_smoke.py"
+  ],
+  "phase1c_artifacts": [
+    "analysis/llama_server_sidecar_api/local_phase_full_qwen/REPORT.md",
+    "analysis/llama_server_sidecar_api/local_phase_full_qwen/summary.json",
+    "analysis/llama_server_sidecar_api/local_phase_full_qwen/build_info.json",
+    "analysis/llama_server_sidecar_api/local_phase_full_qwen/implementation_mapping.json",
+    "analysis/llama_server_sidecar_api/local_phase_full_qwen/qwen35_profile.json",
+    "analysis/llama_server_sidecar_api/local_phase_full_qwen/sidecar_v1_compatibility_audit.json",
+    "analysis/llama_server_sidecar_api/local_phase_full_qwen/hook_dispatch.json",
+    "analysis/llama_server_sidecar_api/local_phase_full_qwen/recursive_path_smoke.json",
+    "analysis/llama_server_sidecar_api/local_phase_full_qwen/c2q_path_smoke.json",
+    "analysis/llama_server_sidecar_api/local_phase_full_qwen/api_regression.json",
+    "analysis/llama_server_sidecar_api/local_phase_full_qwen/multi_sidecar_recursive_isolation.json",
+    "analysis/llama_server_sidecar_api/local_phase_full_qwen/compatibility_tests.json",
+    "analysis/llama_server_sidecar_api/local_phase_full_qwen/changed_files.json",
+    "analysis/llama_server_sidecar_api/local_phase_full_qwen/remote_validation_plan.md",
+    "analysis/llama_server_sidecar_api/local_phase_full_qwen/manifest.json",
+    "analysis/llama_server_sidecar_api/local_phase_full_qwen/expert_consultation.md"
+  ],
+  "historical_experiment_artifacts_modified": false,
+  "remote_files_modified": false
+}

@@ -1,0 +1,16 @@
+{
+  "status": "passed",
+  "operations": [
+    "create",
+    "explicit observe write",
+    "save",
+    "unload",
+    "load saved state",
+    "stop server",
+    "restart server",
+    "load saved state in fresh server process",
+    "verify component count and SHA"
+  ],
+  "payload_format": "sidecar_v1",
+  "behavioral_step31b_fingerprint": "not_required_and_not_repeated_in_phase_1F"
+}

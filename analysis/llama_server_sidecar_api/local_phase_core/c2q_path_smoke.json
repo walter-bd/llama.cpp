@@ -1,0 +1,8 @@
+{
+  "status": "not_implemented",
+  "stateful_c2": false,
+  "clean_context": false,
+  "forced_clean_retrieval": false,
+  "request_local_comparator": false,
+  "reason": "llama-server has no request-local clean comparator context or aligned-prefix forced-response path."
+}

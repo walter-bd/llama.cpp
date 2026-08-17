@@ -1,0 +1,12 @@
+{
+  "status": "not_validated",
+  "checkpoint": "core memory transaction only",
+  "prepass": "not wired through server sidecar path",
+  "query_capture": "not wired through request-lifetime collector",
+  "retrieval": "existing partial cvec path only",
+  "rollback": "core primitive exists; server integration absent",
+  "injected_replay": "not implemented",
+  "commit": "not implemented as an explicit one-token server transaction",
+  "committed_replay_count": null,
+  "reason": "Current server path captures/applies after sampling and uses the next decode; this is not Step-30 C2."
+}

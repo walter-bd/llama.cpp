@@ -1,0 +1,30 @@
+{
+  "status": "pass",
+  "build": "pass",
+  "tests": {
+    "phase1_http_lifecycle_smoke": "pass",
+    "profile_contract_status": "pass",
+    "sidecar_v1_load_save_roundtrip": "covered_by_phase1_smoke",
+    "learning_off_hash_invariant": "covered_by_phase1_smoke",
+    "explicit_observe_boundary": "covered_by_phase1_smoke",
+    "multi_sidecar_isolation": "covered_by_phase1_smoke",
+    "ordinary_no_sidecar_regression": "covered_by_phase1_smoke",
+    "profile_mapping_audit": "pass",
+    "unsupported_profile_failure": "source_audited",
+    "recursive_c2_smoke": "not_validated"
+  },
+  "remote_validation": "not_run",
+  "smoke_command": "tools/server/tests/sidecar_api_smoke.py --server build/bin/llama-server --model Qwen3.5-4B-UD-Q3_K_XL.gguf --sidecar p_init",
+  "smoke_observations": {
+    "profile_id": "qwen35-4b-step30-v1",
+    "supported_sites": 2,
+    "research_sites": 3,
+    "final_logit_supported": false,
+    "recursive_supported": false,
+    "bad_checksum_rejected": true,
+    "duplicate_create_rejected": true,
+    "invalid_observe_rejected": true,
+    "unknown_sidecar_rejected": true,
+    "exit_code": 0
+  }
+}

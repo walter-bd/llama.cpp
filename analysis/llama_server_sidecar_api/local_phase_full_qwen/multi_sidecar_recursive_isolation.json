@@ -1,0 +1,12 @@
+{
+  "status": "partial",
+  "registry_isolation": "pass",
+  "full_c2_interleaving": "not_tested",
+  "reason": "The current server lacks request-slot-local stateful C2 replay. Existing API isolation covers sidecar selection and bank state, but not full recursive KV isolation.",
+  "required_before_remote": [
+    "per-slot recursive state",
+    "request-local retrieval",
+    "request-local rollback",
+    "request-local replay and commit"
+  ]
+}

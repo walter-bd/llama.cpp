@@ -86,6 +86,14 @@ struct llama_context {
     float * get_embeddings_ith(int32_t i);
     float * get_embeddings_seq(llama_seq_id seq_id);
 
+    bool project_output(
+            const float * direction,
+                       size_t direction_count,
+                       float * projected,
+                       size_t projected_count);
+
+    bool add_logits_residual(const float * residual, size_t residual_count);
+
     float * get_embeddings_nextn();
     float * get_embeddings_nextn_ith(int32_t i);
 
@@ -388,6 +396,13 @@ private:
 
     // host buffer for the model output (logits and embeddings)
     ggml_backend_buffer_ptr buf_output;
+
+    // Lazily dequantized copy of the immutable output matrix. This is used
+    // only by opt-in output-space interventions and never by the normal path.
+    std::vector<float> output_projection_host;
+    int64_t output_projection_width = 0;
+    int64_t output_projection_rows  = 0;
+    bool output_projection_ready = false;
 
     // keep copies of the per-sequence memory on the device
     std::map<llama_seq_id, llama_memory_buffers> mem_storage;

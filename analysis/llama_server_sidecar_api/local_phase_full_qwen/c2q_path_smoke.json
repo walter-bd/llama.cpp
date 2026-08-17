@@ -1,0 +1,8 @@
+{
+  "status": "not_run",
+  "required": "stateful query with aligned clean-prefix retrieval forced into the C2 stateful path",
+  "current_stateful_query": false,
+  "current_clean_context_clamp": false,
+  "reason": "The current server has neither slot-local C2 replay nor the separate clean context required by the validated C2q diagnostic.",
+  "scientific_claim": "none"
+}

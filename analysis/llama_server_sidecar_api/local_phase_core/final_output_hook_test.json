@@ -1,0 +1,10 @@
+{
+  "status": "partial",
+  "projection_api_compiled": true,
+  "logits_residual_api_compiled": true,
+  "zero_residual_unit_test": "not_run",
+  "known_residual_exact_shift_test": "not_run",
+  "server_pre_sampling_wiring": false,
+  "research_semantics": "final residual is projected through model.output after committed replay and must be applied before sampling",
+  "blocker": "current server samples in post_decode before the sidecar branch and only installs a next-decode cvec"
+}

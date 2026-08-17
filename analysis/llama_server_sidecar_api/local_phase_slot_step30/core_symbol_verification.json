@@ -1,0 +1,16 @@
+{
+  "phase": "1E",
+  "status": "passed",
+  "library": "build/bin/libllama.so.0.1.0",
+  "library_sha256": "4b47b14b3fdc3ed2d33fdd7d7aff760e17cd8a0a708693f3f3c345f4995cb605",
+  "verification_method": "nm -D -C",
+  "symbols": {
+    "llama_state_transaction_begin": true,
+    "llama_state_transaction_restore": true,
+    "llama_state_transaction_is_exact": true,
+    "llama_state_transaction_free": true,
+    "llama_context_project_output": true,
+    "llama_context_add_logits_residual": true
+  },
+  "note": "The symbols are exported by the built shared library. No server orchestration code was changed in Phase 1E because the exact slot-local path is not currently safe to express."
+}

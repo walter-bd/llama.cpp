@@ -1,0 +1,6 @@
+{
+  "status": "not_validated",
+  "partial_api_isolation": "covered by prior Phase 1 engineering tests",
+  "full_c2_context_isolation": "not_run",
+  "reason": "The current target context is shared across server slots; an exclusive transactional sidecar path has not been implemented."
+}

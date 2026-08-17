@@ -1,0 +1,35 @@
+{
+  "phase_files": [
+    "common/arg.cpp",
+    "common/common.h",
+    "include/llama.h",
+    "src/llama-context.cpp",
+    "src/llama-context.h",
+    "tools/server/CMakeLists.txt",
+    "tools/server/server-context.cpp",
+    "tools/server/server-context.h",
+    "tools/server/server-task.cpp",
+    "tools/server/server-task.h",
+    "tools/server/server.cpp",
+    "tools/server/tests/utils.py",
+    "tools/server/server-sidecar.cpp",
+    "tools/server/server-sidecar.h",
+    "tools/server/server-sidecar-profile.cpp",
+    "tools/server/server-sidecar-profile.h",
+    "tools/server/sidecar_client.py",
+    "tools/server/tests/sidecar_api_smoke.py",
+    "docs/sidecar-server.md",
+    "analysis/llama_server_sidecar_api/functional_server"
+  ],
+  "unrelated_worktree_entries_preserved": [
+    "examples/centered-outcome-relevance",
+    "examples/competitive-reader-forward-validation",
+    "examples/hard-negative-context-generalization",
+    "examples/outcome-conditioned-context-relevance",
+    "examples/outcome-modulated-discriminative-relevance",
+    "examples/step11-memory-retrieval-audit",
+    "examples/integrated-recursive-plasticity.cpp",
+    "other pre-existing analysis artifacts"
+  ],
+  "git_action": "no staging or commit performed"
+}

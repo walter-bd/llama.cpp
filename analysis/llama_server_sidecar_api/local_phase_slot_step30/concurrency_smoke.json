@@ -1,0 +1,5 @@
+{
+  "status": "not_run",
+  "reason": "A concurrency test before adding the hard transaction admission gate would test the wrong implementation.",
+  "required_future_test": "hold one transaction from checkpoint through commit and verify competing slot work is rejected or deferred without shared-context mutation"
+}

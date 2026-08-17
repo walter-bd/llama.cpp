@@ -1,0 +1,24 @@
+{
+  "status": "passed",
+  "harness": "tools/server/tests/sidecar_api_smoke.py",
+  "checks": {
+    "ordinary_chat_without_sidecar": "passed",
+    "profile_compatibility": "passed",
+    "bad_checksum_rejected": "passed",
+    "create": "passed",
+    "duplicate_create_rejected": "passed",
+    "load": "passed",
+    "save": "passed",
+    "reset": "passed",
+    "unload": "passed",
+    "delete": "passed",
+    "status": "passed",
+    "learning_toggle": "passed",
+    "disabled_observe_no_write": "passed",
+    "invalid_observe_rejected": "passed",
+    "consumed_or_missing_episode_rejected": "passed",
+    "unknown_id_rejected": "passed",
+    "server_restart": "passed",
+    "safe_sidecar_directory": "passed"
+  }
+}

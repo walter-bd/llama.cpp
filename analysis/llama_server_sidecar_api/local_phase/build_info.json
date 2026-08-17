@@ -1,0 +1,41 @@
+{
+  "status": "pass",
+  "repository": "/home/walt/work/llama.cpp",
+  "branch": "sparse-residual-v0.1",
+  "base_commit": "2c81172e59181f088add203a446ebfcbc9c4b96d",
+  "target": "llama-server",
+  "build_directory": "build",
+  "build_command": "cmake --build build --config Release --target llama-server -j2",
+  "build_type": "Release",
+  "compiler": "c++ (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0",
+  "cmake": "cmake version 3.28.3",
+  "cuda_compiler": "Build cuda_12.0.r12.0/compiler.32267302_0",
+  "cuda_enabled": true,
+  "cuda_architectures": "75-real",
+  "cuda_options": {
+    "GGML_CUDA": true,
+    "GGML_CUDA_FA": true,
+    "GGML_CUDA_GRAPHS": true,
+    "GGML_CUDA_COMPRESSION_MODE": "size"
+  },
+  "gpu": {
+    "name": "NVIDIA GeForce GTX 1660 Ti with Max-Q Design",
+    "compute_capability": "7.5",
+    "driver": "580.173.02"
+  },
+  "executable": {
+    "path": "build/bin/llama-server",
+    "sha256": "28d5a56cb3ec2c943f7ea7b0462506b2fc566f45c87a8c9d85aad63063abe977",
+    "size_bytes": 17920
+  },
+  "smoke_model": {
+    "path": "/home/walt/models/qwen35-q3-sparse/Qwen3.5-4B-UD-Q3_K_XL.gguf",
+    "sha256": "1874727e4bb6ac23fd0cd134ac6562d2759fe44f37fa68c55197b36526da4e37",
+    "size_bytes": 2436420768
+  },
+  "working_tree_diff_sha256": "4eee2c8fb8f4f10e1f99b416fa140832d901ded46fdd7810d8102f3260e11cab",
+  "ui_build_note": "npm ci reported an existing Node engine mismatch; the verified latest UI archive fallback was used.",
+  "cuda_phase": "local engineering only",
+  "remote_gpu_used": false,
+  "scientific_runtime_validation": "deferred to Phase 2"
+}

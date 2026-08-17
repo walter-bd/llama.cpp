@@ -1,0 +1,8 @@
+{
+  "core_api_status": "built_and_exported",
+  "server_transaction_status": "blocked",
+  "core_restore_scope": "full serialized llama context and all sequences",
+  "server_context_scope": "shared ctx_tgt used by slots and batch decode",
+  "exactness_result": "core API cannot establish slot-local exactness while other scheduler work can mutate the shared context",
+  "failure_tags": ["slot_transaction_not_exclusive", "full_context_snapshot_shared_by_slots"]
+}

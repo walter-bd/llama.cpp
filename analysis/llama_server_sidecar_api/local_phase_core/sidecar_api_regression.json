@@ -1,0 +1,13 @@
+{
+  "status": "not_rerun_in_phase_1D",
+  "prior_phase": "llama_server_sidecar_local_integration_validated",
+  "prior_scope": [
+    "lifecycle endpoints",
+    "sidecar_v1 load/save/restart",
+    "learning-off immutability",
+    "explicit observe boundary",
+    "multi-sidecar API isolation"
+  ],
+  "full_c2_regression": "not_available",
+  "reason": "Phase 1D did not alter HTTP lifecycle code and no compatible local Qwen fixture was available for full-path execution."
+}

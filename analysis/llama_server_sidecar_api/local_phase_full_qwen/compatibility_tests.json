@@ -1,0 +1,19 @@
+{
+  "status": "pass_for_partial_profile",
+  "accepted": {
+    "profile": "qwen35-4b-step30-v1",
+    "architecture": "qwen35",
+    "hidden_size": 2560,
+    "minimum_layers": 32,
+    "adapter": "identity"
+  },
+  "explicit_rejections": [
+    "unknown profile",
+    "incompatible architecture",
+    "incompatible hidden dimension",
+    "insufficient layer count",
+    "missing final-site capability",
+    "missing recursive capability"
+  ],
+  "full_step30_profile_usable": false
+}

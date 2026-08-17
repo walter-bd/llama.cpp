@@ -1,0 +1,14 @@
+{
+  "verdict": "llama_server_step30_slot_path_local_not_validated",
+  "scientific_failure": false,
+  "engineering_status": "core primitives verified; exact server orchestration remains incomplete",
+  "failure_tags": [
+    "slot_transaction_not_exclusive",
+    "validated_local_calibration_unavailable",
+    "final_residual_after_sampling",
+    "c2q_clean_context_missing",
+    "stateful_next_token_not_from_committed_replay"
+  ],
+  "remote_status": "do_not_start_remote_validation",
+  "next_required_work": "Add a hard server admission gate and exact C2 coordinator, callback collector/calibration, pre-sampling final residual, and request-local C2q comparator before remote validation."
+}

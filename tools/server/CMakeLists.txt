@@ -15,6 +15,10 @@ add_library(${TARGET} STATIC
     server-common.h
     server-context.cpp
     server-context.h
+    server-sidecar.cpp
+    server-sidecar.h
+    server-sidecar-profile.cpp
+    server-sidecar-profile.h
     server-stream.cpp
     server-stream.h
     server-tools.cpp

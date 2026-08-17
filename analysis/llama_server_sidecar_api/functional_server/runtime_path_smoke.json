@@ -1,0 +1,40 @@
+{
+  "status": "passed",
+  "scope": "local engineering smoke; not scientific parity",
+  "sidecar_only": {
+    "status": "passed",
+    "command": "env N_GPU_LAYERS=99 python3 tools/server/tests/sidecar_api_smoke.py --model <Qwen3.5-4B GGUF> --sidecar <P_init> --server build-cuda/bin/llama-server",
+    "exit_code": 0
+  },
+  "residual_only": {
+    "status": "passed",
+    "command": "env N_GPU_LAYERS=99 LLAMA_SPARSE_RESIDUAL=<Qwen3.5-4B residual> build-cuda/bin/llama-server with ordinary chat request and no sidecar_id",
+    "exit_code": 0,
+    "sidecar_id": null,
+    "sidecar_episode_id": false,
+    "residual_loaded": true
+  },
+  "combined_sparse_residual_sidecar": {
+    "status": "passed",
+    "command": "env N_GPU_LAYERS=99 LLAMA_SPARSE_RESIDUAL=<Qwen3.5-4B residual> python3 tools/server/tests/sidecar_api_smoke.py --model <Qwen3.5-4B GGUF> --sidecar <P_init> --server build-cuda/bin/llama-server",
+    "exit_code": 0,
+    "residual_loaded": true
+  },
+  "observed_profile": {
+    "id": "qwen35-4b-step30-v1",
+    "query_hook": "result_norm",
+    "supported_injection_sites": 2,
+    "research_injection_sites": 3,
+    "final_logit_injection_supported": true,
+    "recursive_state_path_supported": true,
+    "injection_mode": "validated_step30_runtime"
+  },
+  "runtime_features_exercised": [
+    "ordinary request without sidecar_id",
+    "result_norm query capture",
+    "sidecar retrieval and authority path",
+    "sidecar-backed generation",
+    "explicit observe write",
+    "sparse residual model loading when configured"
+  ]
+}

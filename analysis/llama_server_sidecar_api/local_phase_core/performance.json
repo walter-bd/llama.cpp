@@ -1,0 +1,8 @@
+{
+  "status": "build_only",
+  "ordinary_tokens_per_second": null,
+  "sidecar_tokens_per_second": null,
+  "transaction_restore_latency_ms": null,
+  "final_residual_overhead_ms": null,
+  "reason": "No compatible local Qwen3.5 model fixture was available; no performance claim is made."
+}

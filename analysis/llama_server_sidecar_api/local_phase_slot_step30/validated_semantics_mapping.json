@@ -1,0 +1,89 @@
+{
+  "phase": "1E",
+  "research_commit": "f89d3896283721b947f086c24ee207f1ed1baea9",
+  "source_of_truth": "examples/factor-cache-persistence/factor-cache-persistence.cpp",
+  "mappings": [
+    {
+      "mechanism": "query_capture",
+      "research_function": "run_stateful_step28",
+      "research_region": "lines 341-349",
+      "tensor": "result_norm",
+      "semantics": "Capture the final hidden vector from the tentative current-token prepass, then L2-normalize it for z_t.",
+      "server_target": "ggml eval callback collector attached to the slot context",
+      "status": "not_exposed_by_current_server_path"
+    },
+    {
+      "mechanism": "retrieval_and_authority",
+      "research_function": "run_stateful_step28",
+      "research_region": "lines 350-356",
+      "tensor": "sidecar bank response",
+      "semantics": "r_t=P z_t; B=0.01*min(1,||r_t||/0.05).",
+      "server_target": "sidecar backend during the exclusive token transaction",
+      "status": "reader_exists_but_not_connected_to_exact_transaction"
+    },
+    {
+      "mechanism": "hidden_sites",
+      "research_function": "run_stateful_step28",
+      "research_region": "lines 384-430 and 455-463",
+      "tensor": "l_out-23 and l_out-27",
+      "semantics": "Apply direction at graph boundaries with per-site alpha obtained from local-norm calibration.",
+      "server_target": "ggml callback and temporary cvec/graph intervention during replay",
+      "status": "current_server_has_only_next_decode_cvec_approximation"
+    },
+    {
+      "mechanism": "local_calibration",
+      "research_function": "run_stateful_step28",
+      "research_region": "lines 393-453",
+      "tensor": "l_out-23 and l_out-27 boundary vectors",
+      "semantics": "Six iterations, each restoring the checkpoint before probing; subtract alpha*direction from the captured boundary and solve actual rho to <=2e-6, with the research causal fallback if simultaneous convergence fails.",
+      "server_target": "slot-local transaction coordinator plus request/token collector",
+      "status": "not_implemented_in_server"
+    },
+    {
+      "mechanism": "final_output_residual",
+      "research_function": "run_stateful_step28",
+      "research_region": "lines 471-478",
+      "tensor": "result_norm direction projected through model.output",
+      "semantics": "Project the direction through the output matrix, compute final alpha=final_rho*final_norm, add the logits residual before metrics/sampling.",
+      "server_target": "pre-sampling logits path using llama_context_project_output and llama_context_add_logits_residual",
+      "status": "core_api_exists_but_server_sampling_order_is_wrong"
+    },
+    {
+      "mechanism": "checkpoint_restore",
+      "research_function": "state_blob::capture and restore_with_audit",
+      "research_region": "state_blob implementation and run_stateful_step28 lines 336-368",
+      "tensor": "full llama context state",
+      "semantics": "Capture full serialized state before current-token prepass; clear sequence and restore; compare serialized bytes.",
+      "server_target": "slot-local exclusive coordinator",
+      "status": "core_snapshot_is_full_context_and_server_context_is_shared"
+    },
+    {
+      "mechanism": "c2q_clean_comparator",
+      "research_function": "run_step29_stateful_episode",
+      "research_region": "C1a/C2q condition handling",
+      "tensor": "clean result_norm and clean bank response",
+      "semantics": "Maintain a separate clean context aligned to the same visible prefix; force C2 retrieval to the clean response.",
+      "server_target": "request-local comparator context",
+      "status": "not_present_in_server"
+    },
+    {
+      "mechanism": "sampling",
+      "research_function": "run_stateful_step28 caller",
+      "research_region": "replay result is scored after final residual",
+      "tensor": "replay logits",
+      "semantics": "Prepass does not sample; replay logits receive final residual; one sample is taken and replay state is committed.",
+      "server_target": "server post_decode orchestration",
+      "status": "current_server_samples_before_sidecar_capture/application"
+    }
+  ],
+  "exact_constants": {
+    "authority_max": 0.01,
+    "authority_reference_norm": 0.05,
+    "site_23_weight": 0.23072,
+    "site_27_weight": 0.38322,
+    "final_weight": 0.89438,
+    "max_norm_iterations": 6,
+    "local_rho_tolerance": 0.000002
+  },
+  "decision": "Do not approximate the missing server path with post-sampling cvec or a sequence-local partial restore."
+}

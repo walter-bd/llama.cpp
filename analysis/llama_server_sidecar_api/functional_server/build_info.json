@@ -1,0 +1,34 @@
+{
+  "repository": "/home/walt/work/llama.cpp",
+  "branch": "sparse-residual-v0.1",
+  "repository_head": "2c81172e5",
+  "build_directory": "build-cuda",
+  "target": "llama-server",
+  "build_command": "cmake -S . -B build-cuda -DCMAKE_CUDA_ARCHITECTURES=75 && cmake --build build-cuda --parallel 6 --target llama-server",
+  "cuda_architecture": "75",
+  "compiler": "GNU 11.5",
+  "local_gpu": "NVIDIA GeForce GTX 1660 Ti with Max-Q Design",
+  "compute_capability": "7.5",
+  "driver": "580.173.02",
+  "executable": {
+    "path": "build-cuda/bin/llama-server",
+    "sha256": "3d368d058765f097d20e322fcee00b2b9f41745a78ed352526c59e2a054bbfdb"
+  },
+  "model": {
+    "path": "/home/walt/.lmstudio/models/walter-bd/Qwen3.5-4B-UD-Q3_K_XL-validated/Qwen3.5-4B-UD-Q3_K_XL.gguf",
+    "size_bytes": 2436420768,
+    "sha256": "1874727e4bb6ac23fd0cd134ac6562d2759fe44f37fa68c55197b36526da4e37"
+  },
+  "sidecar": {
+    "format": "sidecar_v1",
+    "path": "../evo-prunning/analysis/qwen35_detachable_sidecar/sidecars/p_init",
+    "manifest_sha256": "bc9fbcd3e211a24ce18be07da12ccffc1f0b41ffe2465134d7430f959f70d9e8",
+    "components_sha256": "9e9cd6ea552eb9b917e44a699a5a188a4da873e65fb28cdd3ae203987310cf61",
+    "vectors_sha256": "7ced9f3d5ffebafcb5fe588d087f63bbb92618d9ff301b77f51dcd0b207aeae2"
+  },
+  "sparse_residual": {
+    "path": "../evo-prunning/analysis/qwen4b_sparse_delta_pilot/results/session6/artifacts/Qwen3.5-4B-UD-Q3_K_XL.residual-0.25pct.srs",
+    "size_bytes": 40231039,
+    "sha256": "63202298b1c797aec1bf2a5c666fa36e62d8b142a800bf4583a53fe10aefdee6"
+  }
+}

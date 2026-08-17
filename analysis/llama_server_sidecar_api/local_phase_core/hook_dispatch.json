@@ -1,0 +1,31 @@
+{
+  "status": "not_validated",
+  "research_tensor_names": [
+    "l_out-23",
+    "l_out-27",
+    "result_norm"
+  ],
+  "profile_sites": [
+    {
+      "research_layer": 23,
+      "server_profile_site": 24,
+      "kind": "hidden",
+      "weight": 0.23072
+    },
+    {
+      "research_layer": 27,
+      "server_profile_site": 28,
+      "kind": "hidden",
+      "weight": 0.38322
+    },
+    {
+      "research_layer": -1,
+      "server_profile_site": "final",
+      "kind": "output_residual",
+      "weight": 0.89438
+    }
+  ],
+  "collector": "not_installed_in_server_context",
+  "structured_dispatch_counters": "not_available",
+  "source_of_truth": "examples/factor-cache-persistence/factor-cache-persistence.cpp at f89d3896"
+}

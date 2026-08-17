@@ -1,0 +1,6 @@
+{
+  "status": "blocked_for_full_c2",
+  "existing": "Phase 1 multi-sidecar registry/isolation tests cover bank and API routing",
+  "missing": ["request-local recursive KV isolation", "transaction ownership isolation", "C2q comparator isolation"],
+  "failure_tags": ["recursive_path_not_integrated"]
+}

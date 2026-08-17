@@ -1,0 +1,29 @@
+{
+  "phase": "1",
+  "scope": "local engineering",
+  "scientific_runtime_required": false,
+  "remote_instance_used": false,
+  "verdict": "llama_server_sidecar_local_integration_validated",
+  "integration_mode": "internal_cvec_only",
+  "validated_constants_unchanged": true,
+  "explicit_observe_required": true,
+  "ordinary_no_sidecar_path_preserved": true,
+  "phase2_behavioral_parity": "deferred",
+  "build": "pass",
+  "python_checks": "pass",
+  "git_diff_check": "pass",
+  "api_smoke": "pass",
+  "ordinary_no_sidecar_smoke": "pass",
+  "default_sidecar_opt_in_guard": "pass",
+  "lifecycle_api": "pass",
+  "sidecar_v1_load_save_roundtrip": "pass",
+  "learning_off_hash_invariant": "pass",
+  "explicit_observe_boundary": "pass",
+  "multi_sidecar_isolation": "pass",
+  "server_restart_reload": "pass",
+  "remote_validation": "not_run",
+  "notes": [
+    "The local server uses the narrow internal_cvec_only integration; full Step-30 final-logit topology is deferred to Phase 2.",
+    "No remote instance or scientific runtime epoch was used."
+  ]
+}
