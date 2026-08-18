@@ -1,0 +1,32 @@
+{
+  "verdict": "step30_experience_writer_server_restored",
+  "scope": "validated single observed target token only",
+  "research_commit": "f89d3896283721b947f086c24ee207f1ed1baea9",
+  "server_head": "861fa959e92bd5915d801161016cdfc64826e344",
+  "build": {
+    "directory": "build-experience-writer-ninja2",
+    "configuration": "Release Ninja CPU build, GGML_CUDA=OFF, LLAMA_BUILD_SERVER=ON",
+    "server_sha256": "a762635712c13f1b9b796fe79547bbc8a74d35e44493722a17f04d6dfa21d6ee",
+    "libllama_sha256": "1e81c092788e3cac9b1f6263f173831aa0ff7d4882e298b3337dc6f7e92296d9"
+  },
+  "gates": {
+    "normal_observe_needs_no_vector": true,
+    "episode_captures_clean_prepass_greedy": true,
+    "server_derives_direction": true,
+    "gate_and_eta_source_mapped": true,
+    "old_debug_and_new_normal_update_equivalent": true,
+    "chat_only_immutable": true,
+    "learning_off_immutable": true,
+    "sidecar_v1_unchanged": true,
+    "residual_independent": true,
+    "no_sidecar_regression": true,
+    "multi_sidecar_isolation": true,
+    "multi_token_observation_rejected": true
+  },
+  "limitations": [
+    "Only a single observed token is supported.",
+    "The recovered source uses normalized output-row difference; no new softmax or sequence writer was introduced.",
+    "Runtime writer counts are not serialized in sidecar_v1.",
+    "Remote writer-parity smoke was not run."
+  ]
+}

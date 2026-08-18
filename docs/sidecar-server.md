@@ -164,10 +164,22 @@ An external harness can repeatedly:
 ```python
 sid = client.create("task-1")
 episode = client.chat(messages, sidecar_id=sid)
-client.observe(sid, episode["sidecar_episode_id"], outcome="D")
+client.observe(
+    sid,
+    episode["sidecar_episode_id"],
+    observed_token="D",
+)
 prediction = client.chat(test_messages, sidecar_id=sid)
 client.delete(sid)
 ```
+
+`/v1/sidecar/observe` accepts exactly one observed single-token outcome as
+`observed_token_id` or `observed_token`. The server uses the episode's clean
+prepass prediction and the loaded model output projection to derive the
+validated Step-30 write direction. Callers do not provide a model-width
+vector. Multi-token strings are rejected. The explicit
+`debug_write_direction` field is retained only for research/debug parity and
+is not the normal learning contract.
 
 The model stays loaded while sidecars are created, reset, saved, unloaded,
 reloaded, and deleted.

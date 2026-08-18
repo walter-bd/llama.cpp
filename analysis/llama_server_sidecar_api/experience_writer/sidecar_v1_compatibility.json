@@ -1,0 +1,33 @@
+{
+  "status": "passed",
+  "format": "sidecar_v1",
+  "serialization_changed": false,
+  "model_sha256": "1874727e4bb6ac23fd0cd134ac6562d2759fe44f37fa68c55197b36526da4e37",
+  "states": [
+    {
+      "name": "p_init",
+      "path": "/home/walt/work/evo-prunning/analysis/qwen35_detachable_sidecar/sidecars/p_init",
+      "component_count": 2,
+      "width": 2560,
+      "bank_checksum_fnv1a64": "0adb053fd114ea6e",
+      "payload_sha256": "7ced9f3d5ffebafcb5fe588d087f63bbb92618d9ff301b77f51dcd0b207aeae2"
+    },
+    {
+      "name": "p_true_e4",
+      "path": "/home/walt/work/evo-prunning/analysis/qwen35_detachable_sidecar/sidecars/p_true_e4",
+      "component_count": 10,
+      "width": 2560,
+      "bank_checksum_fnv1a64": "363aa3ffccf59f8e",
+      "payload_sha256": "4a8db4a669083d7835b8adda6a78da5f3b5930d06656ca148ea719a88cd50054"
+    },
+    {
+      "name": "p_shuffled_e4",
+      "path": "/home/walt/work/evo-prunning/analysis/qwen35_detachable_sidecar/sidecars/p_shuffled_e4",
+      "component_count": 10,
+      "width": 2560,
+      "bank_checksum_fnv1a64": "a9831d1c9cb9c4be",
+      "payload_sha256": "3565ad3e64df5874e129061d7f2f81feb55147047662586c85e73907ab9d10d6"
+    }
+  ],
+  "note": "The server validates existing manifest, component, vector, width, topology, and payload metadata; writer counters remain runtime-only and are not added to sidecar_v1."
+}

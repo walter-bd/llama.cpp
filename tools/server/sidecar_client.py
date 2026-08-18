@@ -98,32 +98,60 @@ class SidecarClient:
             "enabled": enabled,
         })
 
+    def tokenize(self, content: str, *, add_special: bool = False, parse_special: bool = False) -> Any:
+        return self._request("POST", "/tokenize", {
+            "content": content,
+            "add_special": add_special,
+            "parse_special": parse_special,
+        })
+
     def observe(
         self,
         sidecar_id: str,
         episode_id: str,
+        *,
+        observed_token_id: int | None = None,
+        observed_token: str | None = None,
+        observed_target: str | None = None,
+    ) -> Any:
+        if (observed_token_id is None) == (observed_token is None):
+            raise ValueError("provide exactly one of observed_token_id or observed_token")
+        body: dict[str, Any] = {
+            "id": sidecar_id,
+            "episode_id": episode_id,
+        }
+        if observed_token_id is not None:
+            body["observed_token_id"] = observed_token_id
+        else:
+            body["observed_token"] = observed_token
+        if observed_target is not None:
+            body["observed_target"] = observed_target
+        return self._request("POST", "/v1/sidecar/observe", body)
+
+    def debug_write_direction(
+        self,
+        sidecar_id: str,
+        episode_id: str,
         observed_target: str,
+        write_direction: list[float],
         *,
         source: str = "",
-        write_direction: list[float] | None = None,
         novelty: float = 0.0,
         surprise: float = 0.0,
         recurrence: float = 0.0,
         consistency: float = 0.0,
     ) -> Any:
-        body: dict[str, Any] = {
+        return self._request("POST", "/v1/sidecar/observe", {
             "id": sidecar_id,
             "episode_id": episode_id,
             "observed_target": observed_target,
             "source": source,
+            "debug_write_direction": write_direction,
             "novelty": novelty,
             "surprise": surprise,
             "recurrence": recurrence,
             "consistency": consistency,
-        }
-        if write_direction is not None:
-            body["write_direction"] = write_direction
-        return self._request("POST", "/v1/sidecar/observe", body)
+        })
 
     def chat(self, messages: list[Mapping[str, Any]], *, sidecar_id: str | None = None, **options: Any) -> Any:
         body: dict[str, Any] = {"messages": messages, **options}

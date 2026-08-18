@@ -1,0 +1,6 @@
+{
+  "status": "not_run",
+  "reason": "This fix was validated locally; no remote target was supplied for a writer-only smoke, and no remote benchmark was required.",
+  "required_future_check": "same episode and observed token through the experience API versus the debug vector path within one locked runtime epoch",
+  "scientific_claim": "not made"
+}

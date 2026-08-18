@@ -3881,9 +3881,22 @@ private:
             if (query.size() != sidecar_trace.final_hidden.size()) {
                 throw std::runtime_error("sidecar query capture width mismatch");
             }
+            const int32_t n_vocab = llama_vocab_n_tokens(vocab);
+            const float * prepass_logits = llama_get_logits_ith(ctx_tgt, -1);
+            if (prepass_logits == nullptr || n_vocab <= 0) {
+                throw std::runtime_error("sidecar runtime could not capture clean prepass logits");
+            }
+            llama_token baseline_greedy = 0;
+            float baseline_logit = prepass_logits[0];
+            for (llama_token token = 1; token < n_vocab; ++token) {
+                if (prepass_logits[token] > baseline_logit) {
+                    baseline_logit = prepass_logits[token];
+                    baseline_greedy = token;
+                }
+            }
             if (!sidecars.prepare_runtime_step(
                         sidecar_id, query.data(), width,
-                        &episode_id, step, error)) {
+                        &episode_id, baseline_greedy, step, error)) {
                 throw std::runtime_error(error);
             }
             slot.sidecar_episode_id = std::move(episode_id);
@@ -4033,7 +4046,6 @@ private:
 
             const double final_norm = sidecar_l2(sidecar_trace.final_hidden);
             const double final_alpha = requested_rho[2] * final_norm;
-            const int32_t n_vocab = llama_vocab_n_tokens(vocab);
             std::vector<float> projected(static_cast<size_t>(n_vocab));
             std::vector<float> residual(static_cast<size_t>(n_vocab));
             if (!llama_context_project_output(
@@ -4778,6 +4790,7 @@ std::unique_ptr<server_res_generator> server_routes::handle_completions_impl(
                         task.params.sidecar_id,
                         params.n_parallel,
                         task.params.n_cmpl,
+                        task.params.n_predict != -1 ? task.params.n_predict : params.n_predict,
                         speculative,
                         sidecar_error)) {
                     throw std::invalid_argument(sidecar_error);
@@ -5113,34 +5126,84 @@ void server_routes::init_routes() {
             const json body = sidecar_body(req);
             const auto id = required_sidecar_id(body);
             const std::string episode_id = json_value(body, "episode_id", std::string());
-            const std::string observed_target = json_value(body, "observed_target", std::string());
-            if (episode_id.empty() || observed_target.empty()) {
-                throw std::invalid_argument("missing episode_id or observed_target");
+            if (episode_id.empty()) {
+                throw std::invalid_argument("missing episode_id");
             }
 
-            std::vector<float> write_direction;
-            const json direction = json_value(body, "write_direction", json::array());
-            if (!direction.is_array()) {
-                throw std::invalid_argument("write_direction must be an array");
+            const bool has_observed_token_id = body.contains("observed_token_id");
+            const bool has_observed_token = body.contains("observed_token");
+            const bool has_debug_direction = body.contains("debug_write_direction");
+            if (body.contains("write_direction")) {
+                throw std::invalid_argument(
+                    "write_direction is unsupported; use observed_token_id or observed_token, "
+                    "or the explicit debug_write_direction field");
             }
-            write_direction.reserve(direction.size());
-            for (const auto & value : direction) {
-                if (!value.is_number()) {
-                    throw std::invalid_argument("write_direction must contain only numbers");
+
+            if (has_debug_direction) {
+                if (has_observed_token_id || has_observed_token) {
+                    throw std::invalid_argument(
+                        "debug_write_direction cannot be combined with an observed token");
                 }
-                write_direction.push_back(value.get<float>());
+                const std::string observed_target = json_value(body, "observed_target", std::string());
+                if (observed_target.empty()) {
+                    throw std::invalid_argument("debug_write_direction requires observed_target");
+                }
+                const json direction = body.at("debug_write_direction");
+                if (!direction.is_array()) {
+                    throw std::invalid_argument("debug_write_direction must be an array");
+                }
+                std::vector<float> write_direction;
+                write_direction.reserve(direction.size());
+                for (const auto & value : direction) {
+                    if (!value.is_number()) {
+                        throw std::invalid_argument("debug_write_direction must contain only numbers");
+                    }
+                    write_direction.push_back(value.get<float>());
+                }
+                return sidecar_response(ctx_server.sidecars.observe_debug(
+                    id,
+                    episode_id,
+                    observed_target,
+                    json_value(body, "source", std::string()),
+                    write_direction,
+                    json_value(body, "novelty", 0.0),
+                    json_value(body, "surprise", 0.0),
+                    json_value(body, "recurrence", 0.0),
+                    json_value(body, "consistency", 0.0)));
+            }
+
+            if (has_observed_token_id == has_observed_token) {
+                throw std::invalid_argument(
+                    "provide exactly one of observed_token_id or observed_token");
+            }
+
+            llama_token observed_token = -1;
+            if (has_observed_token_id) {
+                if (!body.at("observed_token_id").is_number_integer()) {
+                    throw std::invalid_argument("observed_token_id must be an integer");
+                }
+                observed_token = body.at("observed_token_id").get<llama_token>();
+            } else {
+                if (!body.at("observed_token").is_string()) {
+                    throw std::invalid_argument("observed_token must be a string");
+                }
+                const llama_tokens tokens = tokenize_mixed(
+                    ctx_server.vocab, body.at("observed_token"), false, false);
+                if (tokens.size() != 1) {
+                    throw std::invalid_argument(
+                        "observed_token must tokenize to exactly one token");
+                }
+                observed_token = tokens.front();
+            }
+            if (observed_token < 0 || observed_token >= llama_vocab_n_tokens(ctx_server.vocab)) {
+                throw std::invalid_argument("observed token is outside the loaded vocabulary");
             }
 
             return sidecar_response(ctx_server.sidecars.observe(
                 id,
                 episode_id,
-                observed_target,
-                json_value(body, "source", std::string()),
-                write_direction,
-                json_value(body, "novelty", 0.0),
-                json_value(body, "surprise", 0.0),
-                json_value(body, "recurrence", 0.0),
-                json_value(body, "consistency", 0.0)));
+                observed_token,
+                json_value(body, "observed_target", std::string())));
         } catch (const std::exception & e) {
             return sidecar_error(e.what());
         }

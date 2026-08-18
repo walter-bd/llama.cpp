@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "stored_fields": {
+    "sidecar_id": "implicit map owner and request id",
+    "episode_id": "one-shot server handle",
+    "query": "captured result_norm/final-hidden query and used as the write key",
+    "source": "retrieval-selected source identity",
+    "baseline_greedy": "clean prepass argmax token used for the output-row difference",
+    "version": "sidecar lifecycle generation for stale-episode rejection"
+  },
+  "not_stored": [
+    "full llama_context",
+    "KV cache",
+    "CUDA state",
+    "full conversation",
+    "full hidden trajectory",
+    "Qwen weights"
+  ],
+  "writer_counts": {
+    "location": "runtime sidecar object",
+    "fields": ["total", "matching"],
+    "serialized_in_sidecar_v1": false,
+    "matching_semantics": "unconditional validated Step-30 recurrence schedule"
+  },
+  "invalidated_by": [
+    "reset",
+    "load/replacement",
+    "unload",
+    "sidecar lifecycle generation change",
+    "successful observation consumption"
+  ]
+}

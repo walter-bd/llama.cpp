@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "verdict": "step30_experience_writer_server_restored",
+  "research_commit": "f89d3896283721b947f086c24ee207f1ed1baea9",
+  "server_head": "861fa959e92bd5915d801161016cdfc64826e344",
+  "server_sha256": "a762635712c13f1b9b796fe79547bbc8a74d35e44493722a17f04d6dfa21d6ee",
+  "libllama_sha256": "1e81c092788e3cac9b1f6263f173831aa0ff7d4882e298b3337dc6f7e92296d9",
+  "model_sha256": "1874727e4bb6ac23fd0cd134ac6562d2759fe44f37fa68c55197b36526da4e37",
+  "json_artifact_sha256": {
+    "api_regression.json": "0e1df7563bd869163a1b73f87819557ad5aea39f37160b401ab21fc79db30faf",
+    "changed_files.json": "fde6b635ae81e1cb261233bb21956b925acde3a7c0365c70b366d62712c2e102",
+    "episode_state.json": "16d0a2aa17aef183ff526db3944e4f85d8aeb3db473e140466d0778dc25bd203",
+    "gate_equivalence.json": "8ad5bd11f22aa067d8baa6a609023a8c1957da2dab7f0b73ac01c930e7db0556",
+    "learning_off.json": "330a27097914ba1b2e7789be3a106f9501ba76e677d0d932a2e321b7dd63eaf5",
+    "remote_writer_smoke.json": "b72395720d186cbcc11cd3b47bfe0f200b3b3fcd9766243f798429cf50657413",
+    "sidecar_v1_compatibility.json": "fe39c1c00b15a1a8d9a52961e28d2b87c2be3e434724cbab84b3ea9aec8551ce",
+    "step30_smoke.json": "07671f00429e5e871b8ba46b183571a33be131ea93fb93f9088920bb547e8c52",
+    "step30_writer_mapping.json": "0106347dec15c5cec97cc818e0da4a6f42f3591aac9c837b86fe13c66d6957ed",
+    "summary.json": "3371f71d3922197fa623e27eaa2f104c68376cbfbc6e4f4c52f124118aa6aaee",
+    "target_direction_equivalence.json": "f372fb5ea232608ab239007d46483af1b8be0d38025a6c8a03e9d322dab4dbf0"
+  }
+}

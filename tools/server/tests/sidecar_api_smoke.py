@@ -118,16 +118,37 @@ def run(model: Path, sidecar: Path, server_path: Path) -> dict:
             )
             episode_id = first.get("sidecar_episode_id")
             assert episode_id, first
-            status_before_write = client.status("agent")
-            width = status_before_write["width"]
-            direction = [1.0] + [0.0] * (width - 1)
+            tokenized = client.tokenize("D")
+            assert len(tokenized["tokens"]) == 1, tokenized
+
+            legacy_vector = expect_error(
+                client,
+                client._request,
+                "POST",
+                "/v1/sidecar/observe",
+                {
+                    "id": "agent",
+                    "episode_id": episode_id,
+                    "observed_target": "D",
+                    "write_direction": [0.0],
+                },
+            )
+            assert legacy_vector["status"] == 400
+
+            multi_token_observe = expect_error(
+                client,
+                client.observe,
+                "agent",
+                episode_id,
+                observed_token="D D",
+            )
+            assert multi_token_observe["status"] == 400
+
             observed = client.observe(
                 "agent",
                 episode_id,
-                "D",
-                source="A",
-                write_direction=direction,
-                novelty=1.0,
+                observed_token="D",
+                observed_target="D",
             )
             assert observed["updated"] is True
             written_sha = observed["sha256_after"]
@@ -149,8 +170,7 @@ def run(model: Path, sidecar: Path, server_path: Path) -> dict:
             disabled_observe = client.observe(
                 "agent",
                 "missing-episode",
-                "D",
-                write_direction=direction,
+                observed_token_id=tokenized["tokens"][0],
             )
             assert disabled_observe["updated"] is False
 
@@ -160,10 +180,19 @@ def run(model: Path, sidecar: Path, server_path: Path) -> dict:
                 client.observe,
                 "agent",
                 "missing-episode",
-                "D",
-                write_direction=direction,
+                observed_token_id=tokenized["tokens"][0],
             )
             assert invalid_observe["status"] == 400
+
+            multi_token_generation = expect_error(
+                client,
+                client.chat,
+                [{"role": "user", "content": "Say two words."}],
+                sidecar_id="agent",
+                max_tokens=2,
+                stream=False,
+            )
+            assert multi_token_generation["status"] == 400
             client.set_learning("agent", False)
 
             saved = client.save("agent", "saved")
@@ -218,6 +247,9 @@ def run(model: Path, sidecar: Path, server_path: Path) -> dict:
                 "sidecar": str(sidecar),
                 "duplicate_create": duplicate,
                 "bad_checksum_load": bad_load,
+                "legacy_vector": legacy_vector,
+                "multi_token_observe": multi_token_observe,
+                "multi_token_generation": multi_token_generation,
                 "disabled_observe": disabled_observe,
                 "invalid_observe": invalid_observe,
                 "unknown_status": unknown,

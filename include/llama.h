@@ -1075,6 +1075,16 @@ extern "C" {
     // otherwise: float[n_embd] (1-dimensional)
     LLAMA_API float * llama_get_embeddings_seq(struct llama_context * ctx, llama_seq_id seq_id);
 
+    // Copy one row of the loaded output projection to host F32 storage.
+    // This is read-only and independent of a llama_context.  Returns false
+    // when the model has no compatible output tensor or the dimensions/token
+    // ID are invalid.  No tied-embedding fallback is performed.
+    LLAMA_API bool llama_model_output_row(
+            const struct llama_model * model,
+                         llama_token token,
+                              float * row,
+                               size_t row_count);
+
     // Project a model-space direction through the loaded output matrix.
     // This is an opt-in, read-only intervention primitive. Dimensions must
     // match the loaded output tensor exactly; no reshape or truncation occurs.

@@ -1,0 +1,21 @@
+{
+  "status": "passed",
+  "scope": "small local single-token Step-30 writer smoke",
+  "build": "build-experience-writer-ninja2/bin/llama-server",
+  "model": "/home/walt/models/qwen35-q3-sparse/Qwen3.5-4B-UD-Q3_K_XL.gguf",
+  "checks": [
+    "episode is emitted by sidecar-backed one-token inference",
+    "clean prepass greedy token is captured",
+    "observed token is accepted without a caller vector",
+    "output-row direction is derived inside the server",
+    "gate and eta are returned",
+    "one component is appended",
+    "episode is consumed",
+    "multi-token observation is rejected",
+    "legacy ambiguous write_direction is rejected"
+  ],
+  "gate_sequence": [0.25, 0.3333333333333333, 0.6666666666666666, 1.0],
+  "final_components": 4,
+  "final_sha256": "cadf3c1802fb76f34ae107994855e9cddc7693e1fe047c51571751536bcbc03b",
+  "exit_code": 0
+}

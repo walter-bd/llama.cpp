@@ -1,0 +1,12 @@
+{
+  "status": "passed",
+  "test": "learning disabled read path",
+  "evidence": {
+    "chat_retrieval_continued": true,
+    "sha_before_equals_sha_after": true,
+    "observe_response": {"updated": false, "reason": "learning_disabled"},
+    "chat_created_no_episode": true
+  },
+  "source_test": "tools/server/tests/sidecar_api_smoke.py",
+  "exit_code": 0
+}

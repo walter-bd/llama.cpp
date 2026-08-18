@@ -1,0 +1,40 @@
+{
+  "implementation_files": [
+    "include/llama.h",
+    "src/llama-model.cpp",
+    "tools/server/server-context.cpp",
+    "tools/server/server-sidecar.cpp",
+    "tools/server/server-sidecar.h",
+    "tools/server/sidecar_client.py",
+    "tools/server/tests/sidecar_api_smoke.py",
+    "docs/sidecar-server.md"
+  ],
+  "new_artifact_files": [
+    "analysis/llama_server_sidecar_api/experience_writer/REPORT.md",
+    "analysis/llama_server_sidecar_api/experience_writer/summary.json",
+    "analysis/llama_server_sidecar_api/experience_writer/step30_writer_mapping.json",
+    "analysis/llama_server_sidecar_api/experience_writer/expert_consultation.md",
+    "analysis/llama_server_sidecar_api/experience_writer/accepted_recommendations.md",
+    "analysis/llama_server_sidecar_api/experience_writer/api_contract.md",
+    "analysis/llama_server_sidecar_api/experience_writer/episode_state.json",
+    "analysis/llama_server_sidecar_api/experience_writer/target_direction_equivalence.json",
+    "analysis/llama_server_sidecar_api/experience_writer/gate_equivalence.json",
+    "analysis/llama_server_sidecar_api/experience_writer/step30_smoke.json",
+    "analysis/llama_server_sidecar_api/experience_writer/learning_off.json",
+    "analysis/llama_server_sidecar_api/experience_writer/api_regression.json",
+    "analysis/llama_server_sidecar_api/experience_writer/sidecar_v1_compatibility.json",
+    "analysis/llama_server_sidecar_api/experience_writer/changed_files.json",
+    "analysis/llama_server_sidecar_api/experience_writer/remote_writer_smoke.json",
+    "analysis/llama_server_sidecar_api/experience_writer/manifest.json"
+  ],
+  "excluded_unrelated_untracked": [
+    "examples/centered-outcome-relevance/",
+    "examples/competitive-reader-forward-validation/",
+    "examples/hard-negative-context-generalization/",
+    "examples/integrated-recursive-plasticity.cpp",
+    "examples/outcome-conditioned-context-relevance/",
+    "examples/outcome-modulated-discriminative-relevance/",
+    "examples/step11-memory-retrieval-audit/"
+  ],
+  "sidecar_format_changed": false
+}

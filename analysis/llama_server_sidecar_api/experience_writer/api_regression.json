@@ -1,0 +1,22 @@
+{
+  "status": "passed",
+  "source_test": "tools/server/tests/sidecar_api_smoke.py",
+  "exit_code": 0,
+  "covered": [
+    "create",
+    "duplicate create rejection",
+    "single-token observed_token string",
+    "observed_token_id",
+    "multi-token observation rejection",
+    "learning disabled immutability",
+    "invalid episode rejection",
+    "legacy write_direction rejection",
+    "save",
+    "unload",
+    "reload",
+    "reset",
+    "delete",
+    "multi-sidecar isolation",
+    "server restart and reload"
+  ]
+}

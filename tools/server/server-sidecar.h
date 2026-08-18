@@ -55,7 +55,18 @@ public:
     nlohmann::ordered_json erase(const std::string & id);
     nlohmann::ordered_json set_learning(const std::string & id, bool enabled);
 
+    // Experience path: derive the validated Step-30 direction from the
+    // observed token and the clean prepass greedy token captured in the
+    // episode.
     nlohmann::ordered_json observe(
+            const std::string & id,
+            const std::string & episode_id,
+            llama_token observed_token,
+            const std::string & observed_target);
+
+    // Explicit research/debug path.  Normal clients must not manufacture the
+    // model-width write direction.
+    nlohmann::ordered_json observe_debug(
             const std::string & id,
             const std::string & episode_id,
             const std::string & observed_target,
@@ -81,6 +92,7 @@ public:
             const float * query,
             int32_t width,
             std::string * episode_id,
+            llama_token baseline_greedy,
             server_sidecar_runtime_step & step,
             std::string & error);
 
@@ -101,6 +113,7 @@ public:
             const std::string & id,
             int32_t n_parallel,
             int32_t n_completions,
+            int32_t n_predict,
             bool speculative,
             std::string & error) const;
 

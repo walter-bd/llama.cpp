@@ -3002,3 +3002,55 @@ uint32_t llama_model_get_tok_embd(const struct llama_model * model, float * out)
 
     return (uint32_t) nelements;
 }
+
+bool llama_model_output_row(
+        const struct llama_model * model,
+        llama_token token,
+        float * row,
+        size_t row_count) {
+    if (model == nullptr || model->output == nullptr || row == nullptr || row_count == 0 || token < 0) {
+        return false;
+    }
+
+    const ggml_tensor * tensor = model->output;
+    if (tensor->ne[2] != 1 || tensor->ne[3] != 1 ||
+            tensor->ne[0] != (int64_t) row_count ||
+            token >= tensor->ne[1]) {
+        return false;
+    }
+
+    const size_t row_offset = (size_t) token * tensor->nb[1];
+    const size_t row_bytes = tensor->nb[1];
+    if (row_bytes == 0) {
+        return false;
+    }
+
+    std::vector<uint8_t> raw(row_bytes);
+    ggml_backend_tensor_get(tensor, raw.data(), row_offset, row_bytes);
+
+    if (tensor->type == GGML_TYPE_F32) {
+        if (row_bytes < row_count * sizeof(float)) {
+            return false;
+        }
+        std::memcpy(row, raw.data(), row_count * sizeof(float));
+        return true;
+    }
+
+    if (tensor->type == GGML_TYPE_F16) {
+        ggml_fp16_to_fp32_row((const ggml_fp16_t *) raw.data(), row, row_count);
+        return true;
+    }
+
+    if (tensor->type == GGML_TYPE_BF16) {
+        ggml_bf16_to_fp32_row((const ggml_bf16_t *) raw.data(), row, row_count);
+        return true;
+    }
+
+    const ggml_type_traits * traits = ggml_get_type_traits(tensor->type);
+    if (ggml_is_quantized(tensor->type) && traits != nullptr && traits->to_float != nullptr) {
+        traits->to_float(raw.data(), row, row_count);
+        return true;
+    }
+
+    return false;
+}

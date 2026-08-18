@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "research_commit": "f89d3896283721b947f086c24ee207f1ed1baea9",
+  "research_source": "examples/integrated-recursive-plasticity/integrated-recursive-plasticity.cpp",
+  "direction": {
+    "research_function": "direction_step30",
+    "source_lines": "393-403",
+    "operation": "normalized(output_row_difference(output, target, baseline.metrics.greedy))",
+    "baseline": "clean pre-injection evaluation; baseline.metrics.greedy",
+    "server_capture": "server-context.cpp captures llama_get_logits_ith(ctx_tgt, -1) argmax during the tentative clean prepass",
+    "server_derivation": "llama_model_output_row(observed_token) - llama_model_output_row(baseline_greedy)",
+    "normalization": "L2 normalization after row subtraction"
+  },
+  "output_matrix": {
+    "research_definition": "examples/injection-depth-threshold/injection-depth-threshold.cpp",
+    "source_lines": "237-267",
+    "row_storage": "dequantized model.output rows, width 2560",
+    "server_api": "llama_model_output_row",
+    "fallback": "none; unavailable output tensors fail explicitly"
+  },
+  "gate": {
+    "research_function": "compute_gate_step30",
+    "source_lines": "101-114",
+    "server_function": "compute_step30_gate",
+    "formula": "N=(total==0), p=(total==0?0:matching/total), S=1-p, R=min(1,total/3), C=p, G=clip(0.25*max(N,S)+R*C,0,1)",
+    "counts": "runtime-owned per-sidecar/source counters; matching is the validated unconditional recurrence schedule, not caller-supplied accuracy"
+  },
+  "update": {
+    "research_function": "update_bank_step30",
+    "source_lines": "405-423",
+    "eta": 0.05,
+    "coefficient": "eta * G",
+    "key": "episode query/source key",
+    "positive_coefficient_guard": true,
+    "server_function": "server_sidecar_manager::observe"
+  },
+  "api_mapping": {
+    "episode_capture": "tools/server/server-context.cpp sidecar runtime prepass",
+    "episode_validation": "tools/server/server-sidecar.cpp server_sidecar_manager::observe",
+    "target_token": "observed_token_id or exactly-one-token observed_token",
+    "debug_vector": "observe_debug via explicit debug_write_direction only",
+    "serialization": "unchanged sidecar_v1"
+  },
+  "non_equivalence_to_other_helper": "The separate W_out^T(e_y-p) conceptual helper is not the operation called by direction_step30 in the recovered source. This port follows the source-called row-difference operation and does not introduce a new sequence writer."
+}

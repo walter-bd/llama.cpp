@@ -1,0 +1,16 @@
+{
+  "status": "passed",
+  "test": "controlled old debug-vector versus new observed-token writer",
+  "model_sha256": "1874727e4bb6ac23fd0cd134ac6562d2759fe44f37fa68c55197b36526da4e37",
+  "width": 2560,
+  "observed_token_id": 35,
+  "baseline_greedy_token_id": 248068,
+  "probe_direction_norm": 0.9183177360046372,
+  "old_debug_update_norm": 1.9497612057126759,
+  "new_normal_update_norm": 1.9497612057126759,
+  "old_debug_sha256_after": "ed5c5500646fbfe5001a3724e34c93361cee7810707daef0bd857fa15d0ab33a",
+  "new_normal_sha256_after": "ed5c5500646fbfe5001a3724e34c93361cee7810707daef0bd857fa15d0ab33a",
+  "components_equal": true,
+  "sidecar_sha_equal": true,
+  "note": "The debug response reports the supplied normalized vector norm, while the normal response reports the raw output-row difference norm. Component payload, coefficient, key, update norm, and final sidecar hash are equal."
+}

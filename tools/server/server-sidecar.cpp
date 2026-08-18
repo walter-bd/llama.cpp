@@ -257,6 +257,33 @@ bool close_enough(double left, double right) {
     return std::abs(left - right) <= 1e-9;
 }
 
+struct step30_counts {
+    uint64_t total = 0;
+    uint64_t matching = 0;
+};
+
+struct step30_gate {
+    double novelty = 0.0;
+    double surprise = 0.0;
+    double recurrence = 0.0;
+    double consistency = 0.0;
+    double gate = 0.0;
+};
+
+step30_gate compute_step30_gate(const step30_counts & counts) {
+    step30_gate result;
+    result.novelty = counts.total == 0 ? 1.0 : 0.0;
+    const double probability = counts.total == 0 ? 0.0 :
+        static_cast<double>(counts.matching) / static_cast<double>(counts.total);
+    result.surprise = 1.0 - probability;
+    result.recurrence = std::min(1.0, static_cast<double>(counts.total) / 3.0);
+    result.consistency = probability;
+    result.gate = std::clamp(
+        0.25 * std::max(result.novelty, result.surprise) +
+        result.recurrence * result.consistency, 0.0, 1.0);
+    return result;
+}
+
 } // namespace
 
 struct server_sidecar_manager::sidecar {
@@ -271,6 +298,7 @@ struct server_sidecar_manager::sidecar {
     struct episode {
         std::vector<float> query;
         std::string source;
+        llama_token baseline_greedy = -1;
         uint64_t version = 0;
     };
 
@@ -281,6 +309,7 @@ struct server_sidecar_manager::sidecar {
     bool loaded = true;
     std::vector<component> components;
     std::unordered_map<std::string, episode> episodes;
+    std::unordered_map<std::string, step30_counts> writer_counts;
     uint64_t next_episode = 1;
     uint64_t version = 0;
     uint64_t retrievals = 0;
@@ -295,7 +324,11 @@ struct server_sidecar_manager::sidecar {
     uint64_t query_captures = 0;
     server_sidecar_dispatch_telemetry dispatch_telemetry;
 
-    std::vector<float> retrieve(const float * query, double & raw_norm, double & budget, std::string & source) const {
+    std::vector<float> retrieve(
+            const float * query,
+            double & raw_norm,
+            double & budget,
+            std::string & source) const {
         std::vector<float> response(width, 0.0f);
         double selected_activation = 0.0;
         double selected_abs_activation = -1.0;
@@ -767,6 +800,7 @@ json server_sidecar_manager::reset(const std::string & id) {
     std::lock_guard<std::mutex> state_lock(state->mutex);
     state->components.clear();
     state->episodes.clear();
+    state->writer_counts.clear();
     state->retrievals = 0;
     state->writes = 0;
     state->sum_b = 0.0;
@@ -801,6 +835,120 @@ json server_sidecar_manager::set_learning(const std::string & id, bool enabled) 
 json server_sidecar_manager::observe(
         const std::string & id,
         const std::string & episode_id,
+        llama_token observed_token,
+        const std::string & observed_target) {
+    std::lock_guard<std::mutex> lock(mutex);
+    const auto state = get(id);
+    std::lock_guard<std::mutex> state_lock(state->mutex);
+    if (!state->learning_enabled) {
+        return json{{"id", id}, {"episode_id", episode_id}, {"updated", false}, {"reason", "learning_disabled"}};
+    }
+    auto episode_it = state->episodes.find(episode_id);
+    if (episode_it == state->episodes.end()) {
+        throw std::runtime_error("invalid or expired episode_id");
+    }
+    if (episode_it->second.version != state->version) {
+        throw std::runtime_error("episode invalidated by sidecar state change");
+    }
+    if (observed_token < 0 || !model ||
+            episode_it->second.baseline_greedy < 0) {
+        throw std::runtime_error("observe requires a valid single-token episode and observed token");
+    }
+
+    std::vector<float> observed_row(size_t(state->width));
+    std::vector<float> baseline_row(size_t(state->width));
+    if (!llama_model_output_row(model, observed_token, observed_row.data(), observed_row.size()) ||
+            !llama_model_output_row(model, episode_it->second.baseline_greedy,
+                                    baseline_row.data(), baseline_row.size())) {
+        throw std::runtime_error("Step-30 output projection is unavailable for the observed token");
+    }
+
+    std::vector<float> direction(observed_row.size());
+    for (size_t i = 0; i < direction.size(); ++i) {
+        direction[i] = observed_row[i] - baseline_row[i];
+    }
+    const double direction_norm = vector_norm(direction);
+    const std::string source_key = episode_it->second.source;
+    const llama_token baseline_greedy = episode_it->second.baseline_greedy;
+    std::vector<float> write_key = episode_it->second.query;
+    const auto counts_it = state->writer_counts.find(source_key);
+    const step30_counts counts_before = counts_it == state->writer_counts.end() ?
+        step30_counts{} : counts_it->second;
+    const step30_gate gate = compute_step30_gate(counts_before);
+    const std::string before = state->state_hash();
+
+    state->episodes.erase(episode_it);
+    auto & counts = state->writer_counts[source_key];
+    ++counts.total;
+    // This is the recurrence/association schedule used by the validated
+    // Step-30 runtime.  It is not an accuracy label supplied by the caller.
+    ++counts.matching;
+
+    if (!std::isfinite(direction_norm) || direction_norm <= EPSILON) {
+        return json{
+            {"id", id},
+            {"episode_id", episode_id},
+            {"updated", false},
+            {"reason", "zero_direction"},
+            {"observed_token_id", observed_token},
+            {"baseline_greedy_token_id", baseline_greedy},
+            {"G", gate.gate},
+            {"novelty", gate.novelty},
+            {"surprise", gate.surprise},
+            {"recurrence", gate.recurrence},
+            {"consistency", gate.consistency},
+            {"write_direction_norm", direction_norm},
+            {"sha256_before", before},
+            {"sha256_after", state->state_hash()},
+            {"components", state->components.size()},
+            {"count_total", counts.total},
+            {"count_matching", counts.matching},
+        };
+    }
+
+    sidecar::component component;
+    component.coefficient = ETA * gate.gate;
+    component.source = source_key;
+    component.destination = observed_target.empty() ?
+        "token:" + std::to_string(observed_token) : observed_target;
+    component.key = std::move(write_key);
+    component.value = std::move(direction);
+    for (float & value : component.value) {
+        value = float(double(value) / direction_norm);
+    }
+    const double update_norm = component.coefficient * vector_norm(component.key);
+    const double coefficient = component.coefficient;
+    const bool updated = coefficient > 0.0;
+    if (updated) {
+        state->components.push_back(std::move(component));
+        ++state->writes;
+    }
+    const std::string after = state->state_hash();
+    return json{
+        {"id", id},
+        {"episode_id", episode_id},
+        {"updated", updated},
+        {"observed_token_id", observed_token},
+        {"baseline_greedy_token_id", baseline_greedy},
+        {"G", gate.gate},
+        {"novelty", gate.novelty},
+        {"surprise", gate.surprise},
+        {"recurrence", gate.recurrence},
+        {"consistency", gate.consistency},
+        {"effective_eta", coefficient},
+        {"write_direction_norm", direction_norm},
+        {"update_norm", update_norm},
+        {"sha256_before", before},
+        {"sha256_after", after},
+        {"components", state->components.size()},
+        {"count_total", counts.total},
+        {"count_matching", counts.matching},
+    };
+}
+
+json server_sidecar_manager::observe_debug(
+        const std::string & id,
+        const std::string & episode_id,
         const std::string & observed_target,
         const std::string & source,
         const std::vector<float> & write_direction,
@@ -825,12 +973,12 @@ json server_sidecar_manager::observe(
         throw std::runtime_error("observe requires observed_target");
     }
     if (write_direction.size() != size_t(state->width)) {
-        throw std::runtime_error("observe requires write_direction with model width");
+        throw std::runtime_error("debug_write_direction requires model-width vector");
     }
     const double gate = std::clamp(0.25 * std::max(novelty, surprise) + recurrence * consistency, 0.0, 1.0);
     const double direction_norm = vector_norm(write_direction);
     if (!std::isfinite(direction_norm) || direction_norm <= EPSILON) {
-        throw std::runtime_error("observe write_direction has zero or non-finite norm");
+        throw std::runtime_error("debug_write_direction has zero or non-finite norm");
     }
     sidecar::component component;
     component.coefficient = ETA * gate;
@@ -842,18 +990,26 @@ json server_sidecar_manager::observe(
         value = float(double(value) / direction_norm);
     }
     const std::string before = state->state_hash();
-    state->components.push_back(std::move(component));
+    const double update_norm = ETA * gate * vector_norm(component.key);
+    const double coefficient = component.coefficient;
+    const bool updated = coefficient > 0.0;
+    if (updated) {
+        state->components.push_back(std::move(component));
+    }
     state->episodes.erase(episode_it);
-    ++state->version;
-    ++state->writes;
+    if (updated) {
+        ++state->writes;
+    }
     const std::string after = state->state_hash();
     return json{
         {"id", id},
         {"episode_id", episode_id},
-        {"updated", true},
+        {"updated", updated},
+        {"mode", "debug_write_vector"},
         {"G", gate},
         {"effective_eta", ETA * gate},
-        {"update_norm", ETA * gate},
+        {"write_direction_norm", direction_norm},
+        {"update_norm", update_norm},
         {"sha256_before", before},
         {"sha256_after", after},
         {"components", state->components.size()},
@@ -872,7 +1028,7 @@ bool server_sidecar_manager::apply_query(
         return false;
     }
     server_sidecar_runtime_step step;
-    if (!prepare_runtime_step(id, query, width, episode_id, step, error)) {
+    if (!prepare_runtime_step(id, query, width, episode_id, -1, step, error)) {
         return false;
     }
     if (step.raw_norm <= EPSILON) {
@@ -892,6 +1048,7 @@ bool server_sidecar_manager::prepare_runtime_step(
         const float * query,
         int32_t width,
         std::string * episode_id,
+        llama_token baseline_greedy,
         server_sidecar_runtime_step & step,
         std::string & error) {
     if (query == nullptr) {
@@ -926,7 +1083,8 @@ bool server_sidecar_manager::prepare_runtime_step(
                 *episode_id = id + "-episode-" + std::to_string(state->next_episode++);
             }
             state->episodes[*episode_id] = sidecar::episode{
-                std::vector<float>(query, query + width), source, state->version,
+                std::vector<float>(query, query + width),
+                source, baseline_greedy, state->version,
             };
         }
     }
@@ -986,6 +1144,7 @@ bool server_sidecar_manager::validate_request(
         const std::string & id,
         int32_t n_parallel,
         int32_t n_completions,
+        int32_t n_predict,
         bool speculative,
         std::string & error) const {
     std::lock_guard<std::mutex> lock(mutex);
@@ -1013,6 +1172,14 @@ bool server_sidecar_manager::validate_request(
     }
     if (n_completions != 1) {
         error = "sidecar requests require n=1 / one completion";
+        return false;
+    }
+    const auto state = sidecars.at(id);
+    std::lock_guard<std::mutex> state_lock(state->mutex);
+    if (state->learning_enabled && n_predict != 1) {
+        error = "experience-derived sidecar learning requires exactly one generated "
+                "token per request (set max_tokens=1); disable learning for "
+                "multi-token inference";
         return false;
     }
     if (speculative) {
