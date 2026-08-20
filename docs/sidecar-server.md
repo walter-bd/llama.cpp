@@ -37,11 +37,10 @@ Sidecar-backed requests use the validated Qwen profile and a slot-local
 current-token routine:
 
 ```text
-tentative current-token evaluation
+tentative current-token evaluation on a private sequence
   -> result_norm query capture
   -> P z retrieval and authority
-  -> exact state restore
-  -> hidden site 24 and site 28 injection
+  -> hidden site 24 and site 28 graph injection
   -> final output projection and logits residual
   -> sample once
   -> commit the injected replay state
@@ -54,6 +53,20 @@ analysis are not benchmark-runtime requirements and remain deferred.
 
 Sidecar support is opt-in: start the server with `--sidecar-dir PATH`.
 Without that option, sidecar requests fail explicitly as disabled.
+
+The runtime implementation is selected with `--sidecar-runtime MODE`:
+
+- `fast` is the default benchmark path. It evaluates the clean current token
+  on a private scratch sequence, computes retrieval on the host, and performs
+  one graph-native replay on the live sequence. The replay graph computes the
+  validated site-local norms, both hidden injections, and the projected final
+  logits residual. No sampler is invoked during the clean evaluation.
+- `reference` retains the serialized transaction and tensor-boundary capture
+  path for diagnostics and parity checks. It is substantially slower and is
+  not the default benchmark runtime.
+
+Fast mode reserves one additional internal sequence when sidecar support is
+configured. This does not increase the number of user-visible request slots.
 
 ## Lifecycle endpoints
 
@@ -151,9 +164,11 @@ RNG/session state, or CUDA state.
 
 The registry owns independent sidecar objects keyed by ID. Each object has its
 own mutex and episode table. Sidecar-backed requests are kept out of ordinary
-batching because the current cvec/injection state is context-local. The
-request's transient KV/transaction state is never stored in portable sidecar
-state. This is a correctness restriction; throughput tuning is deferred.
+batching while their clean-evaluation and committed-replay pair runs. Fast
+mode uses a private sequence for the clean evaluation and graph-local
+intervention tensors; reference mode uses a serialized context transaction.
+The request's transient KV/transaction state is never stored in portable
+sidecar state.
 
 ## Python client and benchmark workflow
 

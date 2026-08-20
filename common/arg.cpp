@@ -3588,6 +3588,16 @@ common_params_context common_params_parser_init(common_params & params, llama_ex
         }
     ).set_examples({LLAMA_EXAMPLE_SERVER}));
     add_opt(common_arg(
+        {"--sidecar-runtime"}, "MODE",
+        "sidecar token runtime: fast or reference (default: fast)",
+        [](common_params & params, const std::string & value) {
+            if (value != "fast" && value != "reference") {
+                throw std::invalid_argument("invalid sidecar runtime: " + value);
+            }
+            params.sidecar_runtime = value;
+        }
+    ).set_examples({LLAMA_EXAMPLE_SERVER}));
+    add_opt(common_arg(
         {"--models-dir"}, "PATH",
         "directory containing models for the router server (default: disabled)",
         [](common_params & params, const std::string & value) {

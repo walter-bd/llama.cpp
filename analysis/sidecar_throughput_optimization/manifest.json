@@ -1,0 +1,27 @@
+{
+  "artifact_version": 1,
+  "files": [
+    "PLAN.md",
+    "REPORT.md",
+    "build_info.json",
+    "benchmark.json",
+    "manifest.json"
+  ],
+  "source_files_changed": [
+    "common/arg.cpp",
+    "common/common.cpp",
+    "common/common.h",
+    "docs/sidecar-server.md",
+    "include/llama.h",
+    "src/llama-adapter.cpp",
+    "src/llama-adapter.h",
+    "src/llama-context.cpp",
+    "src/llama-context.h",
+    "src/llama-graph.cpp",
+    "src/llama-graph.h",
+    "src/models/qwen35.cpp",
+    "tools/server/server-context.cpp",
+    "tools/server/server-sidecar.cpp",
+    "tools/server/server-sidecar.h"
+  ]
+}

@@ -1,0 +1,55 @@
+{
+  "prompt": "Write a concise explanation of why deterministic software tests matter. Use exactly three short paragraphs.",
+  "request": {
+    "temperature": 0,
+    "seed": 42,
+    "cache_prompt": false,
+    "reasoning": "off",
+    "reasoning_format": "none"
+  },
+  "sidecar": {
+    "source": "p_true_e4",
+    "id": "bench-final",
+    "profile": "qwen35-4b-step30-v1",
+    "components": 10,
+    "width": 2560,
+    "sha256_before": "3b8ae2f2bac45b1743cbb8aa08745d1ec20e2167b59b13cdc74b97ed86c45d27",
+    "sha256_after": "3b8ae2f2bac45b1743cbb8aa08745d1ec20e2167b59b13cdc74b97ed86c45d27",
+    "writes": 0
+  },
+  "throughput": {
+    "ordinary_residual_only_64_tokens_per_second": 41.45696898229064,
+    "fast_empty_sidecar_64_tokens_per_second": 18.533107484374824,
+    "fast_active_sidecar_64_tokens_per_second": 12.336741341810567,
+    "fast_active_sidecar_16_tokens_per_second": 12.131888182812997,
+    "reference_active_sidecar_16_tokens_per_second": 1.105791516721337,
+    "fast_over_reference_ratio": 10.9712309995,
+    "target_tokens_per_second": 10.0,
+    "target_met": true
+  },
+  "parity_16_tokens": {
+    "same_generated_tokens": true,
+    "same_first_token_id": true,
+    "first_token_id": 89454,
+    "first_token_text": "Determin",
+    "same_top5_order": true,
+    "reference_selected_logprob": -0.0012669838033616543,
+    "fast_selected_logprob": -0.001267341780476272,
+    "absolute_selected_logprob_delta": 0.00000035797711461782455
+  },
+  "fast_telemetry_16_tokens": {
+    "retrievals": 16,
+    "query_captures": 16,
+    "injection_site_24": 16,
+    "injection_site_28": 16,
+    "max_B": 0.01,
+    "cumulative_B": 0.16
+  },
+  "cache_prompt_smoke": {
+    "accepted": true,
+    "identical_repeat_output": true,
+    "reported_cached_tokens": 0,
+    "claim": "compatible flag; prompt reuse was not demonstrated in this configuration"
+  }
+}
+

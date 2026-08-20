@@ -407,6 +407,7 @@ void server_sidecar_manager::clear_context(llama_context * ctx) const {
     if (model_width > 0) {
         llama_set_adapter_cvec(ctx, nullptr, 0, model_width, -1, -1);
     }
+    llama_clear_step30_intervention(ctx);
 }
 
 void server_sidecar_manager::invalidate_episodes() {
@@ -1138,6 +1139,57 @@ bool server_sidecar_manager::clear_runtime_hidden(
         int32_t width,
         std::string & error) const {
     return server_sidecar_injection_engine::clear_internal_cvec(ctx, width, error);
+}
+
+bool server_sidecar_manager::apply_runtime_step30(
+        const std::string & id,
+        llama_context * ctx,
+        const float * direction,
+        int32_t width,
+        const std::array<double, 3> & rho,
+        std::string & error) {
+    if (ctx == nullptr || direction == nullptr) {
+        error = "sidecar Step-30 context or direction is unavailable";
+        return false;
+    }
+
+    std::lock_guard<std::mutex> lock(mutex);
+    if (injection_profile == nullptr) {
+        error = profile_error.empty() ?
+            "sidecar_injection_profile_not_supported" : profile_error;
+        return false;
+    }
+    if (model_width != width) {
+        error = "sidecar Step-30 width does not match model width";
+        return false;
+    }
+    const auto it = sidecars.find(id);
+    if (it == sidecars.end()) {
+        error = "unknown sidecar_id: " + id;
+        return false;
+    }
+
+    if (llama_set_step30_intervention(
+                ctx,
+                direction,
+                size_t(width),
+                float(rho[0]),
+                float(rho[1]),
+                float(rho[2])) != 0) {
+        error = "failed to configure graph-native Step-30 intervention";
+        return false;
+    }
+    std::lock_guard<std::mutex> state_lock(it->second->mutex);
+    it->second->dispatch_telemetry.injection_sites += 2;
+    it->second->dispatch_telemetry.graph_layer_24 += 1;
+    it->second->dispatch_telemetry.graph_layer_28 += 1;
+    return true;
+}
+
+void server_sidecar_manager::clear_runtime_step30(llama_context * ctx) const {
+    if (ctx != nullptr) {
+        llama_clear_step30_intervention(ctx);
+    }
 }
 
 bool server_sidecar_manager::validate_request(

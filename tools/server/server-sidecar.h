@@ -109,6 +109,16 @@ public:
             int32_t width,
             std::string & error) const;
 
+    bool apply_runtime_step30(
+            const std::string & id,
+            llama_context * ctx,
+            const float * direction,
+            int32_t width,
+            const std::array<double, 3> & rho,
+            std::string & error);
+
+    void clear_runtime_step30(llama_context * ctx) const;
+
     bool validate_request(
             const std::string & id,
             int32_t n_parallel,

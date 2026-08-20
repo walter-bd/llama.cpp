@@ -145,6 +145,15 @@ struct llama_context {
     bool set_attnres_sidecar_query(const float * query_data, size_t query_count);
     void clear_attnres_sidecar_map();
 
+    bool init_step30_intervention();
+    bool set_step30_intervention(
+            const float * direction,
+                   size_t direction_count,
+                    float rho_shallow,
+                    float rho_deep,
+                    float rho_final);
+    void clear_step30_intervention();
+
     bool adapters_lora_are_same(llama_adapter_lora ** adapters, size_t n_adapters, float * scales);
 
     bool set_adapter_cvec(
@@ -306,6 +315,8 @@ private:
     llama_cparams cparams;
 
     llama_adapter_cvec_ptr  cvec;
+    llama_adapter_step30_ptr step30;
+    bool step30_active = false;
     llama_adapter_fast_weights_ptr fast_weights;
     llama_adapter_attnres_sidecar_ptr attnres_sidecar;
     llama_adapter_loras_ptr loras;

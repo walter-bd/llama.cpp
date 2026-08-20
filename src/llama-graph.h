@@ -750,6 +750,7 @@ struct llm_graph_params {
     ggml_backend_t backend_cpu;
 
     const llama_adapter_cvec     * cvec;
+    const llama_adapter_step30   * step30;
     const llama_adapter_fast_weights * fast_weights;
     const llama_adapter_attnres_sidecar * attnres_sidecar;
     const llama_adapter_loras    * loras;
@@ -849,6 +850,7 @@ struct llm_graph_params {
             arch  == other.arch  &&
             gtype == other.gtype &&
             cvec  == other.cvec  &&
+            step30 == other.step30 &&
             fast_weights == other.fast_weights &&
             attnres_sidecar == other.attnres_sidecar &&
             loras == other.loras &&
@@ -996,6 +998,7 @@ struct llm_graph_context {
     ggml_backend_t backend_cpu; // TODO: needed by build_attn_mha, figure out a way to remove?
 
     const llama_adapter_cvec     * cvec;
+    const llama_adapter_step30   * step30;
     const llama_adapter_fast_weights * fast_weights;
     const llama_adapter_attnres_sidecar * attnres_sidecar;
     const llama_adapter_loras    * loras;

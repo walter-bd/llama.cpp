@@ -1,0 +1,25 @@
+{
+  "captured_at": "2026-08-19T23:23:29-03:00",
+  "branch": "perf/sidecar-10tps",
+  "base_commit": "a7a6d1a0d240661129050be2bebfb265376618de",
+  "worktree": "/home/walt/work/llama-sidecar-throughput",
+  "build_type": "Release",
+  "cuda_enabled": true,
+  "cuda_binary": "build-fast2/bin/llama-server",
+  "cuda_binary_sha256": "7e10e7fb1c41753cd74a3aa5f7fd5fe55e31ec3897eb62c39cd9e99eba307c13",
+  "libllama": "build-fast2/bin/libllama.so",
+  "libllama_sha256": "bc3fa94fe2e5dda46c267d7a0161952712fa9caab358da9bfdf73279de806296",
+  "cpu_build": "build-check/bin/llama-server",
+  "gpu": "NVIDIA GeForce GTX 1660 Ti with Max-Q Design",
+  "gpu_memory_mib": 6144,
+  "driver": "580.173.02",
+  "model": "/home/walt/models/qwen35-q3-sparse/Qwen3.5-4B-UD-Q3_K_XL.gguf",
+  "model_sha256": "1874727e4bb6ac23fd0cd134ac6562d2759fe44f37fa68c55197b36526da4e37",
+  "residual": "/home/walt/models/qwen35-q3-sparse/Qwen3.5-4B-UD-Q3_K_XL.residual-0.1pct.srs",
+  "residual_sha256": "f0a8bd43dc6c381b9bb73a6e63aa707143cfa71ccd2765ae49d526f7676b878f",
+  "context_size": 8192,
+  "parallel_user_slots": 1,
+  "internal_sidecar_sequences": 1,
+  "gpu_layers": 99
+}
+

@@ -42,6 +42,38 @@ private:
 
 using llama_adapter_cvec_ptr = std::shared_ptr<llama_adapter_cvec>;
 
+// Context-local Qwen3.5 Step-30 intervention. The three tensors contain the
+// normalized retrieved direction pre-scaled by the validated per-site rho.
+// Local hidden norms and the final output projection remain in the graph.
+struct llama_adapter_step30 {
+    bool init(const llama_model & model);
+    bool set(
+            const float * direction,
+                   size_t direction_count,
+                    float rho_shallow,
+                    float rho_deep,
+                    float rho_final);
+
+    ggml_tensor * apply_hidden(ggml_context * ctx, ggml_tensor * cur, int il) const;
+    ggml_tensor * apply_output(
+            ggml_context * ctx,
+            ggml_tensor * logits,
+            ggml_tensor * final_hidden,
+            ggml_tensor * output) const;
+
+    int32_t get_n_embd() const { return n_embd; }
+
+private:
+    int32_t n_embd = 0;
+    ggml_tensor * shallow = nullptr;
+    ggml_tensor * deep    = nullptr;
+    ggml_tensor * final   = nullptr;
+    std::vector<ggml_context_ptr> ctxs;
+    std::vector<ggml_backend_buffer_ptr> bufs;
+};
+
+using llama_adapter_step30_ptr = std::unique_ptr<llama_adapter_step30>;
+
 // Context-local low-rank residual applied after the final model norm.
 // Tensor layout follows GGML mul_mat conventions:
 //   v: [n_embd, rank], u: [rank, n_embd].

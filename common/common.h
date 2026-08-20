@@ -445,6 +445,7 @@ struct common_params {
     int32_t n_keep                =     0; // number of tokens to keep from initial prompt
     int32_t n_chunks              =    -1; // max number of chunks to process (-1 = unlimited)
     int32_t n_parallel            =     1; // number of parallel sequences to decode
+    int32_t n_seq_max_extra       =     0; // internal sequences reserved by the application
     int32_t n_sequences           =     1; // number of sequences to decode
     int32_t n_outputs_max         =     0; // max outputs in a batch (0 = n_batch)
     int32_t n_outputs_max_per_seq =     1; // max outputs per sequence
@@ -674,6 +675,7 @@ struct common_params {
     std::string slot_save_path;
     std::string media_path; // path to directory for loading media files
     std::string sidecar_dir; // optional root for sidecar_v1 packages; empty disables sidecars
+    std::string sidecar_runtime = "fast"; // fast graph path or reference transaction path
 
     float slot_prompt_similarity = 0.1f;
 

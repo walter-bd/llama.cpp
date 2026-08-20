@@ -1459,6 +1459,42 @@ void llama_context::clear_attnres_sidecar_map() {
     }
 }
 
+bool llama_context::init_step30_intervention() {
+    if (step30) {
+        return true;
+    }
+    auto candidate = std::make_unique<llama_adapter_step30>();
+    if (!candidate->init(model)) {
+        return false;
+    }
+    step30 = std::move(candidate);
+    return true;
+}
+
+bool llama_context::set_step30_intervention(
+        const float * direction,
+               size_t direction_count,
+                float rho_shallow,
+                float rho_deep,
+                float rho_final) {
+    if (!init_step30_intervention() || !step30->set(
+            direction, direction_count, rho_shallow, rho_deep, rho_final)) {
+        return false;
+    }
+    if (!step30_active) {
+        step30_active = true;
+        sched_need_reserve = true;
+    }
+    return true;
+}
+
+void llama_context::clear_step30_intervention() {
+    if (step30_active) {
+        step30_active = false;
+        sched_need_reserve = true;
+    }
+}
+
 bool llama_context::adapters_lora_are_same(llama_adapter_lora ** adapters, size_t n_adapters, float * scales) {
     LLAMA_LOG_DEBUG("%s: adapters = %p\n", __func__, (void *) adapters);
 
@@ -2639,6 +2675,7 @@ llm_graph_params llama_context::graph_params(
         /*.sched       =*/ sched.get(),
         /*.backend_cpu =*/ backend_cpu,
         /*.cvec        =*/ cvec.get(),
+        /*.step30      =*/ step30_active ? step30.get() : nullptr,
         /*.fast_weights =*/ fast_weights.get(),
         /*.attnres_sidecar =*/ attnres_sidecar.get(),
         /*.loras       =*/ loras.get(),
@@ -4093,6 +4130,21 @@ int32_t llama_set_adapter_cvec(
     bool res = ctx->set_adapter_cvec(data, len, n_embd, il_start, il_end);
 
     return res ? 0 : -1;
+}
+
+int32_t llama_set_step30_intervention(
+        llama_context * ctx,
+          const float * direction,
+               size_t   direction_count,
+                float   rho_shallow,
+                float   rho_deep,
+                float   rho_final) {
+    return ctx->set_step30_intervention(
+        direction, direction_count, rho_shallow, rho_deep, rho_final) ? 0 : -1;
+}
+
+void llama_clear_step30_intervention(llama_context * ctx) {
+    ctx->clear_step30_intervention();
 }
 
 //

@@ -724,6 +724,18 @@ extern "C" {
                          int32_t   il_start,
                          int32_t   il_end);
 
+    // Install the Qwen3.5 Step-30 direction for graph-native hidden and
+    // pre-sampling output interventions. The direction must match model width.
+    LLAMA_API int32_t llama_set_step30_intervention(
+            struct llama_context * ctx,
+                     const float * direction,
+                          size_t   direction_count,
+                           float   rho_shallow,
+                           float   rho_deep,
+                           float   rho_final);
+
+    LLAMA_API void llama_clear_step30_intervention(struct llama_context * ctx);
+
     //
     // Memory
     //

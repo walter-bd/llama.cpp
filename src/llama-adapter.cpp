@@ -134,6 +134,101 @@ bool llama_adapter_cvec::apply(
     return true;
 }
 
+// Step-30 graph-native intervention
+
+bool llama_adapter_step30::init(const llama_model & model) {
+    if (model.output == nullptr || model.output->buffer == nullptr) {
+        return false;
+    }
+
+    n_embd = model.hparams.n_embd;
+    ggml_init_params params = {
+        /*.mem_size   =*/ 3 * ggml_tensor_overhead() + 64 * 1024,
+        /*.mem_buffer =*/ nullptr,
+        /*.no_alloc   =*/ true,
+    };
+    ggml_context * raw_ctx = ggml_init(params);
+    if (!raw_ctx) {
+        return false;
+    }
+    ctxs.emplace_back(raw_ctx);
+
+    shallow = ggml_new_tensor_1d(raw_ctx, GGML_TYPE_F32, n_embd);
+    deep    = ggml_new_tensor_1d(raw_ctx, GGML_TYPE_F32, n_embd);
+    final   = ggml_new_tensor_1d(raw_ctx, GGML_TYPE_F32, n_embd);
+    ggml_set_name(shallow, "step30.shallow");
+    ggml_set_name(deep,    "step30.deep");
+    ggml_set_name(final,   "step30.final");
+
+    auto * buft = ggml_backend_buffer_get_type(model.output->buffer);
+    ggml_backend_buffer_t raw_buf = ggml_backend_alloc_ctx_tensors_from_buft(raw_ctx, buft);
+    if (!raw_buf) {
+        return false;
+    }
+    ggml_backend_buffer_clear(raw_buf, 0);
+    bufs.emplace_back(raw_buf);
+    return true;
+}
+
+bool llama_adapter_step30::set(
+        const float * direction,
+               size_t direction_count,
+                float rho_shallow,
+                float rho_deep,
+                float rho_final) {
+    if (!direction || direction_count != (size_t) n_embd ||
+            !std::isfinite(rho_shallow) || !std::isfinite(rho_deep) || !std::isfinite(rho_final)) {
+        return false;
+    }
+
+    std::vector<float> scaled(direction_count);
+    auto upload = [&](ggml_tensor * tensor, float rho) {
+        for (size_t i = 0; i < direction_count; ++i) {
+            scaled[i] = direction[i] * rho;
+        }
+        ggml_backend_tensor_set(tensor, scaled.data(), 0, scaled.size() * sizeof(float));
+    };
+    upload(shallow, rho_shallow);
+    upload(deep,    rho_deep);
+    upload(final,   rho_final);
+    return true;
+}
+
+static ggml_tensor * llama_step30_apply_scaled_direction(
+        ggml_context * ctx,
+        ggml_tensor * cur,
+        ggml_tensor * scaled_direction) {
+    ggml_tensor * local_norm = ggml_sqrt(ctx, ggml_sum_rows(ctx, ggml_sqr(ctx, cur)));
+    ggml_tensor * direction = ggml_repeat(ctx, scaled_direction, cur);
+    ggml_tensor * scale = ggml_repeat(ctx, local_norm, cur);
+    return ggml_add(ctx, cur, ggml_mul(ctx, direction, scale));
+}
+
+ggml_tensor * llama_adapter_step30::apply_hidden(
+        ggml_context * ctx,
+        ggml_tensor * cur,
+        int il) const {
+    if (il == 23) {
+        return llama_step30_apply_scaled_direction(ctx, cur, shallow);
+    }
+    if (il == 27) {
+        return llama_step30_apply_scaled_direction(ctx, cur, deep);
+    }
+    return cur;
+}
+
+ggml_tensor * llama_adapter_step30::apply_output(
+        ggml_context * ctx,
+        ggml_tensor * logits,
+        ggml_tensor * final_hidden,
+        ggml_tensor * output) const {
+    ggml_tensor * final_norm = ggml_sqrt(ctx, ggml_sum_rows(ctx, ggml_sqr(ctx, final_hidden)));
+    ggml_tensor * direction = ggml_repeat(ctx, final, final_hidden);
+    ggml_tensor * scale = ggml_repeat(ctx, final_norm, final_hidden);
+    ggml_tensor * projected = ggml_mul_mat(ctx, output, ggml_mul(ctx, direction, scale));
+    return ggml_add(ctx, logits, projected);
+}
+
 // fast weights
 
 bool llama_adapter_fast_weights::init(const llama_model & model, int32_t requested_rank) {

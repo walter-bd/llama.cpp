@@ -97,6 +97,7 @@ std::vector<float> sidecar_copy_last_vector(ggml_tensor * tensor) {
 
 struct server_sidecar_trace_collector {
     bool enabled = false;
+    bool capture_boundaries = true;
     std::vector<float> final_hidden;
     std::map<int32_t, std::vector<float>> boundaries;
     int callback_asks = 0;
@@ -165,6 +166,9 @@ bool server_sidecar_eval_callback(ggml_tensor * tensor, bool ask, void * user_da
     }
 
     if (name.rfind("l_out-", 0) != 0) {
+        return false;
+    }
+    if (!collector.capture_boundaries) {
         return false;
     }
 
@@ -375,6 +379,8 @@ struct server_slot {
     // Sidecar transactions are request/slot-local.  The portable bank never
     // owns this transient llama state.
     llama_state_transaction_t sidecar_transaction = nullptr;
+    bool sidecar_fast_transaction = false;
+    llama_seq_id sidecar_scratch_seq = -1;
     std::unique_ptr<const server_task> task_prev; // used for debugging
     std::string sidecar_episode_id;
 
@@ -488,6 +494,14 @@ struct server_slot {
             llama_state_transaction_free(sidecar_transaction);
             sidecar_transaction = nullptr;
         }
+        if (sidecar_fast_transaction && ctx_tgt != nullptr) {
+            llama_clear_step30_intervention(ctx_tgt);
+            if (sidecar_scratch_seq >= 0) {
+                llama_memory_seq_rm(llama_get_memory(ctx_tgt), sidecar_scratch_seq, -1, -1);
+            }
+        }
+        sidecar_fast_transaction = false;
+        sidecar_scratch_seq = -1;
 
         spec_is_replay = false;
 
@@ -1056,7 +1070,14 @@ private:
                 llama_state_transaction_free(slot.sidecar_transaction);
                 slot.sidecar_transaction = nullptr;
             }
+            if (slot.sidecar_fast_transaction && ctx_tgt != nullptr) {
+                llama_memory_seq_rm(
+                        llama_get_memory(ctx_tgt), slot.sidecar_scratch_seq, -1, -1);
+            }
+            slot.sidecar_fast_transaction = false;
+            slot.sidecar_scratch_seq = -1;
         }
+        sidecars.clear_runtime_step30(ctx_tgt);
         sidecar_trace.enabled = false;
         sidecar_trace.clear();
 
@@ -1138,6 +1159,11 @@ private:
         const bool is_resume = sleeping;
 
         params_base = params;
+        if (!params_base.sidecar_dir.empty() && params_base.sidecar_runtime == "fast") {
+            // The fast runtime keeps the current committed slot untouched while
+            // a clean current-token prepass runs on this private sequence.
+            params_base.n_seq_max_extra = 1;
+        }
         const auto output_limits = server_output_limits(params_base);
         params_base.n_outputs_max = output_limits.total;
         params_base.n_outputs_max_per_seq = output_limits.per_seq;
@@ -1153,6 +1179,7 @@ private:
         }
 
         sidecar_trace.enabled = false;
+        sidecar_trace.capture_boundaries = params_base.sidecar_runtime == "reference";
         sidecar_trace.clear();
 
         const bool has_mmproj = !params.mmproj.path.empty();
@@ -1467,6 +1494,9 @@ private:
 
             slot.callback_on_reset = [this](const server_slot & slot) {
                 sidecars.clear_context(ctx_tgt);
+                if (slot.sidecar_scratch_seq >= 0) {
+                    llama_memory_seq_rm(llama_get_memory(ctx_tgt), slot.sidecar_scratch_seq, -1, -1);
+                }
                 sidecar_trace.enabled = false;
                 sidecar_trace.clear();
                 // An episode is intentionally request-scoped, not slot-scoped:
@@ -3804,6 +3834,89 @@ private:
         }
     }
 
+    void execute_sidecar_runtime_fast(server_slot & slot, llama_batch & batch_view) {
+        if (!slot.sidecar_fast_transaction || slot.sidecar_scratch_seq < 0) {
+            throw std::runtime_error("fast sidecar runtime checkpoint is unavailable");
+        }
+        if (batch_view.n_tokens != 1) {
+            throw std::runtime_error("fast sidecar runtime requires one current token");
+        }
+
+        const int32_t width = llama_model_n_embd(model_tgt);
+        if ((int32_t) sidecar_trace.final_hidden.size() != width) {
+            throw std::runtime_error("fast sidecar runtime did not capture result_norm from the prepass");
+        }
+
+        auto finish = [&]() {
+            sidecars.clear_runtime_step30(ctx_tgt);
+            llama_memory_seq_rm(llama_get_memory(ctx_tgt), slot.sidecar_scratch_seq, -1, -1);
+            sidecar_trace.enabled = false;
+            sidecar_trace.clear();
+            slot.sidecar_fast_transaction = false;
+            slot.sidecar_scratch_seq = -1;
+        };
+
+        try {
+            const auto sidecar_id = slot.task->params.sidecar_id;
+            server_sidecar_runtime_step step;
+            std::string episode_id = slot.sidecar_episode_id;
+            std::string error;
+            std::vector<float> query;
+            if (!sidecars.capture_query(sidecar_id, ctx_tgt, 0, width, query, error)) {
+                throw std::runtime_error(error);
+            }
+            if (query.size() != sidecar_trace.final_hidden.size()) {
+                throw std::runtime_error("fast sidecar query capture width mismatch");
+            }
+
+            const int32_t n_vocab = llama_vocab_n_tokens(vocab);
+            const float * prepass_logits = llama_get_logits_ith(ctx_tgt, -1);
+            if (prepass_logits == nullptr || n_vocab <= 0) {
+                throw std::runtime_error("fast sidecar runtime could not capture clean prepass logits");
+            }
+            llama_token baseline_greedy = 0;
+            float baseline_logit = prepass_logits[0];
+            for (llama_token token = 1; token < n_vocab; ++token) {
+                if (prepass_logits[token] > baseline_logit) {
+                    baseline_logit = prepass_logits[token];
+                    baseline_greedy = token;
+                }
+            }
+            if (!sidecars.prepare_runtime_step(
+                        sidecar_id, query.data(), width,
+                        &episode_id, baseline_greedy, step, error)) {
+                throw std::runtime_error(error);
+            }
+            slot.sidecar_episode_id = std::move(episode_id);
+
+            if (step.raw_norm > 1e-12) {
+                if (step.direction.size() != size_t(width)) {
+                    throw std::runtime_error("fast sidecar direction width mismatch");
+                }
+                const auto weights = server_sidecar_validated_topology::normalized_runtime_weights();
+                const std::array<double, 3> rho = {
+                    step.budget * weights[0],
+                    step.budget * weights[1],
+                    step.budget * weights[2],
+                };
+                if (!sidecars.apply_runtime_step30(
+                            sidecar_id, ctx_tgt, step.direction.data(), width, rho, error)) {
+                    throw std::runtime_error(error);
+                }
+            }
+
+            // The live slot has not seen the current token yet. This single
+            // replay commits either the clean state (empty retrieval) or the
+            // graph-native Step-30 state, and sampling occurs afterwards.
+            sidecar_trace.enabled = false;
+            decode_sidecar_replay(batch_view);
+            finish();
+        } catch (...) {
+            finish();
+            throw;
+        }
+    }
+
     void execute_sidecar_runtime(server_slot & slot, llama_batch & batch_view) {
         if (slot.sidecar_transaction == nullptr) {
             throw std::runtime_error("sidecar runtime transaction is unavailable");
@@ -4105,26 +4218,42 @@ private:
             has_output |= batch.tokens[i].output;
         }
 
-        // A sidecar-generated token is evaluated transactionally: the first
-        // decode is a no-sample prepass, and post_decode() performs the
-        // validated replay before sampling.  Prompt processing remains on the
-        // ordinary path and therefore does not need a transaction.
+        // A sidecar-generated token gets a no-sample clean prepass before the
+        // committed replay. The fast path runs that prepass on a private
+        // sequence; the reference path retains the serialized transaction.
         server_slot * sidecar_slot = sidecar_slot_for_batch(off, batch_view);
+        llama_seq_id sidecar_original_seq = -1;
         if (sidecar_slot != nullptr) {
-            if (batch_view.n_tokens != 1) {
+            if (batch_view.n_tokens != 1 || batch_view.n_seq_id[0] != 1) {
                 throw std::runtime_error("sidecar runtime requires an exclusive single-token batch");
             }
 
-            std::string clear_error;
-            if (!sidecars.clear_runtime_hidden(ctx_tgt, llama_model_n_embd(model_tgt), clear_error)) {
-                throw std::runtime_error(clear_error);
-            }
             sidecar_trace.clear();
             sidecar_trace.enabled = true;
-            sidecar_slot->sidecar_transaction = llama_state_transaction_begin(ctx_tgt);
-            if (sidecar_slot->sidecar_transaction == nullptr) {
-                sidecar_trace.enabled = false;
-                throw std::runtime_error("failed to begin sidecar runtime transaction");
+            if (params_base.sidecar_runtime == "fast") {
+                sidecars.clear_runtime_step30(ctx_tgt);
+                sidecar_trace.capture_boundaries = false;
+                sidecar_original_seq = batch_view.seq_id[0][0];
+                const llama_seq_id scratch_seq = params_base.n_parallel;
+
+                llama_synchronize(ctx_tgt);
+                llama_memory_seq_rm(llama_get_memory(ctx_tgt), scratch_seq, -1, -1);
+                llama_memory_seq_cp(
+                    llama_get_memory(ctx_tgt), sidecar_original_seq, scratch_seq, -1, -1);
+                batch_view.seq_id[0][0] = scratch_seq;
+                sidecar_slot->sidecar_fast_transaction = true;
+                sidecar_slot->sidecar_scratch_seq = scratch_seq;
+            } else {
+                std::string clear_error;
+                if (!sidecars.clear_runtime_hidden(ctx_tgt, llama_model_n_embd(model_tgt), clear_error)) {
+                    throw std::runtime_error(clear_error);
+                }
+                sidecar_trace.capture_boundaries = true;
+                sidecar_slot->sidecar_transaction = llama_state_transaction_begin(ctx_tgt);
+                if (sidecar_slot->sidecar_transaction == nullptr) {
+                    sidecar_trace.enabled = false;
+                    throw std::runtime_error("failed to begin sidecar runtime transaction");
+                }
             }
         }
 
@@ -4139,12 +4268,23 @@ private:
         });
 
         if (sidecar_slot != nullptr) {
+            if (sidecar_original_seq >= 0) {
+                batch_view.seq_id[0][0] = sidecar_original_seq;
+            }
             sidecar_trace.enabled = false;
             if (ret != 0) {
-                std::string clear_error;
-                sidecars.clear_runtime_hidden(ctx_tgt, llama_model_n_embd(model_tgt), clear_error);
-                llama_state_transaction_free(sidecar_slot->sidecar_transaction);
-                sidecar_slot->sidecar_transaction = nullptr;
+                if (sidecar_slot->sidecar_fast_transaction) {
+                    sidecars.clear_runtime_step30(ctx_tgt);
+                    llama_memory_seq_rm(
+                        llama_get_memory(ctx_tgt), sidecar_slot->sidecar_scratch_seq, -1, -1);
+                    sidecar_slot->sidecar_fast_transaction = false;
+                    sidecar_slot->sidecar_scratch_seq = -1;
+                } else {
+                    std::string clear_error;
+                    sidecars.clear_runtime_hidden(ctx_tgt, llama_model_n_embd(model_tgt), clear_error);
+                    llama_state_transaction_free(sidecar_slot->sidecar_transaction);
+                    sidecar_slot->sidecar_transaction = nullptr;
+                }
             }
         }
 
@@ -4310,7 +4450,9 @@ private:
                 return; // sample using speculative decoding
             }
 
-            if (slot.sidecar_transaction != nullptr) {
+            if (slot.sidecar_fast_transaction) {
+                execute_sidecar_runtime_fast(slot, batch_view);
+            } else if (slot.sidecar_transaction != nullptr) {
                 execute_sidecar_runtime(slot, batch_view);
             }
 

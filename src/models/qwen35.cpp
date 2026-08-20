@@ -204,6 +204,9 @@ llama_model_qwen35::graph::graph(const llama_model & model, const llm_graph_para
         cb(cur, "post_ffn", il);
 
         cur = build_cvec(cur, il);
+        if (step30) {
+            cur = step30->apply_hidden(ctx0, cur, il);
+        }
         cb(cur, "l_out", il);
 
         if (attnres_sidecar) {
@@ -231,6 +234,7 @@ llama_model_qwen35::graph::graph(const llama_model & model, const llm_graph_para
 
     cb(cur, "result_norm", -1);
     res->t_embd = cur;
+    ggml_tensor * step30_final_hidden = cur;
 
     if (attnres_sidecar) {
         auto routed_taps = attnres_taps;
@@ -272,6 +276,10 @@ llama_model_qwen35::graph::graph(const llama_model & model, const llm_graph_para
 
     // LM head
     cur = build_lora_mm(model.output, cur, model.output_s);
+
+    if (step30) {
+        cur = step30->apply_output(ctx0, cur, step30_final_hidden, model.output);
+    }
 
     cb(cur, "result_output", -1);
     res->t_logits = cur;
