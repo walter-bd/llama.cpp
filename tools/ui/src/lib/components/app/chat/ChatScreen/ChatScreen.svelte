@@ -9,7 +9,8 @@
 		ChatScreenForm,
 		ChatScreenServerError,
 		ChatScreenStreamResumeStatus,
-		ServerLoadingSplash
+		ServerLoadingSplash,
+		SidecarChatBadge
 	} from '$lib/components/app';
 	import { LANDING_SETTLE_MAX_MS, LANDING_STABLE_FRAMES, ROUTES } from '$lib/constants';
 	import { createAutoScrollController } from '$lib/hooks/use-auto-scroll.svelte';
@@ -348,6 +349,8 @@
 					/>
 				{/if}
 			</div>
+
+			<SidecarChatBadge />
 
 			<ChatScreenForm
 				class="pointer-events-auto conversation-chat-form"

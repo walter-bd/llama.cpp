@@ -383,6 +383,10 @@ struct server_slot {
     llama_seq_id sidecar_scratch_seq = -1;
     std::unique_ptr<const server_task> task_prev; // used for debugging
     std::string sidecar_episode_id;
+    std::vector<json> sidecar_experience_events;
+    std::string sidecar_ephemeral_id;
+    llama_token sidecar_baseline_greedy = -1;
+    size_t sidecar_debug_sham_index = 0;
 
     // used to determine the slot that has been used the longest
     int64_t t_last_used = -1;
@@ -525,6 +529,10 @@ struct server_slot {
         task_prev = std::move(task);
         task.reset();
         sidecar_episode_id.clear();
+        sidecar_experience_events.clear();
+        sidecar_ephemeral_id.clear();
+        sidecar_baseline_greedy = -1;
+        sidecar_debug_sham_index = 0;
 
         // note: callback_on_reset() must have run before this, see release()
         stats = {};
@@ -1076,6 +1084,15 @@ private:
             }
             slot.sidecar_fast_transaction = false;
             slot.sidecar_scratch_seq = -1;
+            if (!slot.sidecar_ephemeral_id.empty()) {
+                try {
+                    sidecars.erase(slot.sidecar_ephemeral_id);
+                } catch (const std::exception & e) {
+                    SRV_WRN("failed to discard internal-plasticity sidecar %s: %s\n",
+                            slot.sidecar_ephemeral_id.c_str(), e.what());
+                }
+                slot.sidecar_ephemeral_id.clear();
+            }
         }
         sidecars.clear_runtime_step30(ctx_tgt);
         sidecar_trace.enabled = false;
@@ -1499,6 +1516,14 @@ private:
                 }
                 sidecar_trace.enabled = false;
                 sidecar_trace.clear();
+                if (!slot.sidecar_ephemeral_id.empty()) {
+                    try {
+                        sidecars.erase(slot.sidecar_ephemeral_id);
+                    } catch (const std::exception & e) {
+                        SRV_WRN("failed to discard internal-plasticity sidecar %s: %s\n",
+                                slot.sidecar_ephemeral_id.c_str(), e.what());
+                    }
+                }
                 // An episode is intentionally request-scoped, not slot-scoped:
                 // the client observes it after the generation response.
 
@@ -1988,6 +2013,35 @@ private:
         // the per-request limit takes priority over the global one
         slot.n_predict_max = task.params.n_predict != -1 ? task.params.n_predict : params_base.n_predict;
 
+        if (task.params.sidecar_debug_internal_plasticity) {
+            if (task.params.sidecar_id.empty()) {
+                send_error(task, "internal reasoning plasticity requires sidecar_id", ERROR_TYPE_INVALID_REQUEST);
+                slot.smpl.reset();
+                slot.n_predict_max = -1;
+                return false;
+            }
+            if (!task.need_sampling() || !common_sampler_has_reasoning_budget(slot.smpl.get())) {
+                send_error(task, "internal reasoning plasticity requires reasoning-budget sampling", ERROR_TYPE_INVALID_REQUEST);
+                slot.smpl.reset();
+                slot.n_predict_max = -1;
+                return false;
+            }
+            const std::string clone_id = "internal-plasticity-" +
+                std::to_string(slot.id) + "-" + std::to_string(task.id);
+            try {
+                sidecars.clone(task.params.sidecar_id, clone_id, true);
+            } catch (const std::exception & e) {
+                send_error(task, std::string("failed to clone sidecar for internal plasticity: ") + e.what(),
+                           ERROR_TYPE_INVALID_REQUEST);
+                slot.smpl.reset();
+                slot.n_predict_max = -1;
+                return false;
+            }
+            slot.sidecar_ephemeral_id = clone_id;
+            slot.sidecar_debug_sham_index = 0;
+            task.params.sidecar_id = clone_id;
+        }
+
         slot.task = std::make_unique<const server_task>(std::move(task));
 
         slot.state = slot.task->is_child()
@@ -2120,7 +2174,8 @@ private:
             }
         }
 
-        if (llama_vocab_is_eog(vocab, result.tok)) {
+        const bool forced_observed_sequence = !slot.task->params.sidecar_observed_tokens.empty();
+        if (llama_vocab_is_eog(vocab, result.tok) && !forced_observed_sequence) {
             slot.stop           = STOP_TYPE_EOS;
             slot.has_next_token = false;
 
@@ -2317,6 +2372,7 @@ private:
 
         res->generation_params = slot.task->params; // copy the parameters
         res->sidecar_episode_id = slot.sidecar_episode_id;
+        res->sidecar_experience_events = slot.sidecar_experience_events;
 
         queue_results.send(std::move(res));
     }
@@ -2527,6 +2583,193 @@ private:
                 cur.pos_max, cur.n_tokens, (float) cur.size() / 1024 / 1024);
     }
 
+    json process_sidecar_observe_sequence(server_task & task) {
+        if (params_base.sidecar_runtime != "fast") {
+            throw std::invalid_argument(
+                "batch and chunked sidecar learning require --sidecar-runtime fast");
+        }
+        if (task.params.sidecar_id.empty()) {
+            throw std::invalid_argument("missing sidecar id");
+        }
+        if (task.params.sidecar_observed_tokens.empty()) {
+            throw std::invalid_argument("observation text tokenized to an empty sequence");
+        }
+
+        const llama_tokens & context_tokens = task.tokens.get_tokens();
+        if (context_tokens.empty()) {
+            throw std::invalid_argument("observation context tokenized to an empty sequence");
+        }
+
+        const int32_t n_batch = llama_n_batch(ctx_tgt);
+        const int32_t n_ctx = llama_n_ctx(ctx_tgt);
+        const int32_t n_embd = llama_model_n_embd(model_tgt);
+        const int32_t n_vocab = llama_vocab_n_tokens(vocab);
+        const int32_t n_observed = int32_t(task.params.sidecar_observed_tokens.size());
+        const int32_t n_context = int32_t(context_tokens.size());
+        const int32_t n_positions = n_context + n_observed - 1;
+        if (n_batch < 1) {
+            throw std::invalid_argument("the configured batch size must be at least 1");
+        }
+        if (n_positions > n_ctx) {
+            throw std::invalid_argument(
+                "observation context and text exceed the configured context size");
+        }
+
+        const bool is_chunked = task.sidecar_observation_mode == "chunked";
+        const int32_t requested_chunk_size = is_chunked ?
+            task.sidecar_observation_chunk_size : n_observed;
+        if (requested_chunk_size < 1) {
+            throw std::invalid_argument("chunk_size must be at least 1");
+        }
+        const int32_t decode_chunk_size = std::min(n_batch, requested_chunk_size);
+
+        const llama_seq_id scratch_seq = params_base.n_parallel;
+        auto cleanup = [&]() {
+            llama_synchronize(ctx_tgt);
+            sidecar_trace.enabled = false;
+            sidecar_trace.clear();
+            sidecars.clear_context(ctx_tgt);
+            llama_set_embeddings(ctx_tgt, false);
+            llama_memory_seq_rm(llama_get_memory(ctx_tgt), scratch_seq, -1, -1);
+        };
+
+        cleanup();
+        llama_set_embeddings(ctx_tgt, true);
+
+        const int64_t started_us = ggml_time_us();
+        int64_t forward_us = 0;
+        int32_t decode_calls = 0;
+        int32_t model_tokens = 0;
+        std::vector<server_sidecar_captured_event> events;
+        events.reserve(task.params.sidecar_observed_tokens.size());
+
+        auto decode_tokens = [&](const llama_tokens & tokens,
+                                 llama_pos start_pos,
+                                 bool capture_outputs,
+                                 int32_t first_target_position) {
+            for (int32_t offset = 0; offset < int32_t(tokens.size()); offset += decode_chunk_size) {
+                const int32_t count = std::min(
+                    decode_chunk_size, int32_t(tokens.size()) - offset);
+                llama_batch observation_batch = llama_batch_init(count, 0, 1);
+                for (int32_t i = 0; i < count; ++i) {
+                    common_batch_add(
+                        observation_batch,
+                        tokens[size_t(offset + i)],
+                        start_pos + offset + i,
+                        {scratch_seq},
+                        capture_outputs);
+                }
+
+                const int64_t forward_started_us = ggml_time_us();
+                const int32_t decode_status = llama_decode(ctx_tgt, observation_batch);
+                if (decode_status == 0) {
+                    llama_synchronize(ctx_tgt);
+                }
+                forward_us += ggml_time_us() - forward_started_us;
+                ++decode_calls;
+                model_tokens += count;
+
+                if (decode_status != 0) {
+                    llama_batch_free(observation_batch);
+                    throw std::runtime_error(
+                        "llama_decode failed during batched sidecar observation: " +
+                        std::to_string(decode_status));
+                }
+
+                if (capture_outputs) {
+                    for (int32_t i = 0; i < count; ++i) {
+                        const int32_t target_position = first_target_position + offset + i;
+                        const float * logits = llama_get_logits_ith(ctx_tgt, i);
+                        const float * query = llama_get_embeddings_ith(ctx_tgt, i);
+                        if (logits == nullptr || query == nullptr) {
+                            llama_batch_free(observation_batch);
+                            throw std::runtime_error(
+                                "batched observation did not expose per-position logits and result_norm embeddings");
+                        }
+
+                        const llama_token baseline = llama_token(
+                            std::distance(logits, std::max_element(logits, logits + n_vocab)));
+                        const llama_token observed =
+                            task.params.sidecar_observed_tokens[size_t(target_position)];
+                        events.push_back(server_sidecar_captured_event{
+                            target_position,
+                            target_position / requested_chunk_size,
+                            observed,
+                            baseline,
+                            common_token_to_piece(ctx_tgt, observed, true),
+                            common_token_to_piece(ctx_tgt, baseline, true),
+                            std::vector<float>(query, query + n_embd),
+                        });
+                    }
+                }
+
+                llama_batch_free(observation_batch);
+            }
+        };
+
+        try {
+            // Ingest all context except its final token without requesting
+            // outputs. The final context token is the predictor position for
+            // observed token zero and is decoded with the target positions.
+            if (n_context > 1) {
+                llama_tokens context_prefix(
+                    context_tokens.begin(), context_tokens.end() - 1);
+                decode_tokens(context_prefix, 0, false, -1);
+            }
+
+            // Predictor position t is the final context token for t=0 and the
+            // actually observed token y_(t-1) thereafter. This makes the
+            // alignment p(y_t | context, y_<t), not a post-y_t state.
+            llama_tokens predictor_tokens;
+            predictor_tokens.reserve(task.params.sidecar_observed_tokens.size());
+            predictor_tokens.push_back(context_tokens.back());
+            predictor_tokens.insert(
+                predictor_tokens.end(),
+                task.params.sidecar_observed_tokens.begin(),
+                task.params.sidecar_observed_tokens.end() - 1);
+            decode_tokens(predictor_tokens, n_context - 1, true, 0);
+
+            const int64_t writer_started_us = ggml_time_us();
+            json result = sidecars.observe_captured_sequence(
+                task.params.sidecar_id,
+                "sequence-" + std::to_string(task.id),
+                task.sidecar_observation_mode,
+                requested_chunk_size,
+                events,
+                task.params.sidecar_debug_capture_write_directions);
+            const int64_t writer_us = ggml_time_us() - writer_started_us;
+            const int64_t total_us = ggml_time_us() - started_us;
+            const double elapsed_s = std::max(1.0e-9, double(total_us) / 1.0e6);
+
+            result["input_chars"] = task.sidecar_observation_input_chars;
+            result["tokenize_ms"] = double(task.sidecar_observation_tokenize_us) / 1000.0;
+            result["forward_ms"] = double(forward_us) / 1000.0;
+            result["writer_ms"] = double(writer_us) / 1000.0;
+            result["sidecar_update_ms"] = double(writer_us) / 1000.0;
+            result["total_ms"] = double(total_us) / 1000.0;
+            result["elapsed_ms"] = double(total_us) / 1000.0;
+            result["observed_tokens_per_second"] = double(n_observed) / elapsed_s;
+            result["model_tokens_per_second"] = double(model_tokens) / elapsed_s;
+            result["model_tokens_processed"] = model_tokens;
+            result["llama_decode_calls"] = decode_calls;
+            result["state_restore_count"] = 0;
+            result["calibration_iterations"] = 0;
+            result["chunks_processed"] =
+                (n_observed + requested_chunk_size - 1) / requested_chunk_size;
+            result["transactional"] = true;
+            result["fast_approximation"] = true;
+            result["acquisition_reader_recurrence"] = "between_requests_only";
+            result["plastic_state_recurs_between_chunks"] = false;
+            result["write_commit_strategy"] = "ordered_after_full_acquisition";
+
+            cleanup();
+            return result;
+        } catch (...) {
+            cleanup();
+            throw;
+        }
+    }
+
     // returns false to decline the task, it is offered again after the decode is done
     bool process_single_task(server_task && task, bool is_yielding) {
         // while yielding, an encode / decode is running and only accessing metrics is safe
@@ -2653,6 +2896,28 @@ private:
             case SERVER_TASK_TYPE_NEXT_RESPONSE:
                 {
                     // do nothing
+                } break;
+            case SERVER_TASK_TYPE_SIDECAR_OBSERVE_SEQUENCE:
+                {
+                    const bool slot_is_processing = std::any_of(
+                        slots.begin(), slots.end(),
+                        [](const server_slot & slot) { return slot.is_processing(); });
+                    if (slot_is_processing) {
+                        SRV_DBG("completion slot is active, defer sidecar observation, id_task = %d\n", task.id);
+                        queue_tasks.defer(std::move(task));
+                        break;
+                    }
+
+                    try {
+                        auto res = std::make_unique<server_task_result_sidecar_sequence>();
+                        res->id = task.id;
+                        res->data = process_sidecar_observe_sequence(task);
+                        queue_results.send(std::move(res));
+                    } catch (const std::invalid_argument & e) {
+                        send_error(task, e.what(), ERROR_TYPE_INVALID_REQUEST);
+                    } catch (const std::exception & e) {
+                        send_error(task, e.what(), ERROR_TYPE_SERVER);
+                    }
                 } break;
             case SERVER_TASK_TYPE_METRICS:
                 {
@@ -3860,6 +4125,10 @@ private:
             const auto sidecar_id = slot.task->params.sidecar_id;
             server_sidecar_runtime_step step;
             std::string episode_id = slot.sidecar_episode_id;
+            const bool capture_episode =
+                slot.task->params.sidecar_capture_episode ||
+                !slot.task->params.sidecar_observed_tokens.empty() ||
+                slot.task->params.sidecar_debug_internal_plasticity;
             std::string error;
             std::vector<float> query;
             if (!sidecars.capture_query(sidecar_id, ctx_tgt, 0, width, query, error)) {
@@ -3884,10 +4153,12 @@ private:
             }
             if (!sidecars.prepare_runtime_step(
                         sidecar_id, query.data(), width,
-                        &episode_id, baseline_greedy, step, error)) {
+                        capture_episode ? &episode_id : nullptr,
+                        baseline_greedy, step, error)) {
                 throw std::runtime_error(error);
             }
             slot.sidecar_episode_id = std::move(episode_id);
+            slot.sidecar_baseline_greedy = baseline_greedy;
 
             if (step.raw_norm > 1e-12) {
                 if (step.direction.size() != size_t(width)) {
@@ -3985,6 +4256,10 @@ private:
         try {
             server_sidecar_runtime_step step;
             std::string episode_id = slot.sidecar_episode_id;
+            const bool capture_episode =
+                slot.task->params.sidecar_capture_episode ||
+                !slot.task->params.sidecar_observed_tokens.empty() ||
+                slot.task->params.sidecar_debug_internal_plasticity;
             std::string error;
             std::vector<float> query;
             if (!sidecars.capture_query(
@@ -4009,10 +4284,12 @@ private:
             }
             if (!sidecars.prepare_runtime_step(
                         sidecar_id, query.data(), width,
-                        &episode_id, baseline_greedy, step, error)) {
+                        capture_episode ? &episode_id : nullptr,
+                        baseline_greedy, step, error)) {
                 throw std::runtime_error(error);
             }
             slot.sidecar_episode_id = std::move(episode_id);
+            slot.sidecar_baseline_greedy = baseline_greedy;
 
             // An empty bank response still follows the same transaction path,
             // but has no hidden or output intervention.
@@ -4459,15 +4736,143 @@ private:
             // shifted according to the current sub-batch
             const int tok_idx = slot.i_batch - off;
 
-            llama_token id;
+            const common_reasoning_budget_state reasoning_state_before =
+                common_sampler_reasoning_state(slot.smpl.get());
+
+            const bool has_observed_sequence = !slot.task->params.sidecar_observed_tokens.empty();
+            const size_t observed_index = static_cast<size_t>(slot.stats.n_gen);
+            if (has_observed_sequence && observed_index >= slot.task->params.sidecar_observed_tokens.size()) {
+                throw std::runtime_error("sidecar observed-token sequence exhausted before request completion");
+            }
+
+            llama_token sampled_id;
             {
                 scoped_timer timer(t_sampl, n_sampl);
-                id = common_sampler_sample(slot.smpl.get(), slot.ctx_tgt, tok_idx);
+                sampled_id = common_sampler_sample(slot.smpl.get(), slot.ctx_tgt, tok_idx);
             }
+            const llama_token id = has_observed_sequence
+                ? slot.task->params.sidecar_observed_tokens[observed_index]
+                : sampled_id;
 
             slot.i_batch = -1;
 
             common_sampler_accept(slot.smpl.get(), id, true);
+
+            if (has_observed_sequence && !slot.sidecar_episode_id.empty()) {
+                std::vector<float> direction;
+                std::vector<float> query;
+                const bool capture_vectors =
+                    slot.task->params.sidecar_debug_capture_write_directions;
+                json event = sidecars.observe(
+                    slot.task->params.sidecar_id,
+                    slot.sidecar_episode_id,
+                    id,
+                    std::string(),
+                    capture_vectors ? &direction : nullptr,
+                    capture_vectors ? &query : nullptr);
+                if (capture_vectors) {
+                    event["debug_key"] = std::move(query);
+                    event["debug_write_direction"] = std::move(direction);
+                }
+                event["sequence_index"] = observed_index;
+                event["observed_token_id"] = id;
+                event["generated_token_id"] = sampled_id;
+                event["baseline_greedy_token_id"] = slot.sidecar_baseline_greedy;
+                slot.sidecar_experience_events.push_back(std::move(event));
+                slot.sidecar_episode_id.clear();
+                slot.sidecar_baseline_greedy = -1;
+            } else if (slot.task->params.sidecar_debug_internal_plasticity &&
+                    !slot.sidecar_episode_id.empty()) {
+                const common_reasoning_budget_state reasoning_state_after =
+                    common_sampler_reasoning_state(slot.smpl.get());
+                const bool is_reasoning_token =
+                    reasoning_state_before == REASONING_BUDGET_COUNTING &&
+                    reasoning_state_after == REASONING_BUDGET_COUNTING;
+                const bool deviated = id != slot.sidecar_baseline_greedy;
+                const bool is_sham = slot.task->params.sidecar_debug_sham;
+                json event;
+
+                if (!is_reasoning_token) {
+                    const bool discarded = sidecars.discard_episode(
+                        slot.task->params.sidecar_id,
+                        slot.sidecar_episode_id);
+                    event = json{
+                        {"updated", false},
+                        {"reason", "not_reasoning_token"},
+                        {"discarded", discarded},
+                    };
+                } else if (!is_sham && deviated) {
+                    std::vector<float> direction;
+                    event = sidecars.observe(
+                        slot.task->params.sidecar_id,
+                        slot.sidecar_episode_id,
+                        id,
+                        std::string(),
+                        slot.task->params.sidecar_debug_capture_write_directions ? &direction : nullptr);
+                    if (!direction.empty() && slot.task->params.sidecar_debug_capture_write_directions) {
+                        event["debug_write_direction"] = direction;
+                    }
+                    event["deviation"] = true;
+                } else if (is_sham) {
+                    const auto & scheduled = slot.task->params.sidecar_debug_sham_events;
+                    while (slot.sidecar_debug_sham_index < scheduled.size() &&
+                            scheduled[slot.sidecar_debug_sham_index].token_index < static_cast<int64_t>(observed_index)) {
+                        event = json{
+                            {"updated", false},
+                            {"reason", "scheduled_token_index_missed"},
+                            {"scheduled_token_index", scheduled[slot.sidecar_debug_sham_index].token_index},
+                            {"source_event_index", scheduled[slot.sidecar_debug_sham_index].source_event_index},
+                            {"realized", false},
+                        };
+                        slot.sidecar_experience_events.push_back(std::move(event));
+                        ++slot.sidecar_debug_sham_index;
+                    }
+                    if (slot.sidecar_debug_sham_index < scheduled.size() &&
+                            scheduled[slot.sidecar_debug_sham_index].token_index == static_cast<int64_t>(observed_index)) {
+                        const auto & sham = scheduled[slot.sidecar_debug_sham_index];
+                        event = sidecars.observe_sham(
+                            slot.task->params.sidecar_id,
+                            slot.sidecar_episode_id,
+                            id,
+                            std::string(),
+                            sham.direction,
+                            sham.gate,
+                            sham.effective_eta);
+                        event["scheduled_token_index"] = sham.token_index;
+                        event["source_event_index"] = sham.source_event_index;
+                        event["realized"] = true;
+                        event["deviation"] = deviated;
+                        ++slot.sidecar_debug_sham_index;
+                    } else {
+                        const bool discarded = sidecars.discard_episode(
+                            slot.task->params.sidecar_id,
+                            slot.sidecar_episode_id);
+                        event = json{
+                            {"updated", false},
+                            {"reason", "no_scheduled_event"},
+                            {"discarded", discarded},
+                            {"realized", false},
+                        };
+                    }
+                } else {
+                    const bool discarded = sidecars.discard_episode(
+                        slot.task->params.sidecar_id,
+                        slot.sidecar_episode_id);
+                    event = json{
+                        {"updated", false},
+                        {"reason", "clean_token"},
+                        {"discarded", discarded},
+                        {"deviation", false},
+                    };
+                }
+                event["token_index"] = observed_index;
+                event["generated_token_id"] = id;
+                event["baseline_greedy_token_id"] = slot.sidecar_baseline_greedy;
+                event["reasoning_token"] = is_reasoning_token;
+                slot.sidecar_experience_events.push_back(std::move(event));
+                slot.sidecar_episode_id.clear();
+                slot.sidecar_baseline_greedy = -1;
+            }
 
             // here we have synchronized the llama_context (due to the sampling above), so we can do time measurement
             const int64_t t_now = ggml_time_us();
@@ -4902,6 +5307,36 @@ std::unique_ptr<server_res_generator> server_routes::handle_completions_impl(
             inputs = tokenize_input_prompts(ctx_server.vocab, ctx_server.mctx, prompt, true, true);
         }
 
+        const bool has_observed_sequence = data.contains("sidecar_observed_tokens");
+        llama_tokens observed_tokens;
+        if (has_observed_sequence) {
+            if (res_type != TASK_RESPONSE_TYPE_NONE) {
+                throw std::invalid_argument("sidecar_observed_tokens is supported only by native /completion");
+            }
+            if (inputs.size() != 1) {
+                throw std::invalid_argument("sidecar_observed_tokens requires exactly one prompt");
+            }
+            const auto & observed = data.at("sidecar_observed_tokens");
+            if (!observed.is_array() || observed.empty()) {
+                throw std::invalid_argument("sidecar_observed_tokens must be a non-empty array");
+            }
+            if (observed.size() > static_cast<size_t>(INT32_MAX)) {
+                throw std::invalid_argument("sidecar_observed_tokens is too long");
+            }
+            observed_tokens.reserve(observed.size());
+            const int32_t n_vocab = llama_vocab_n_tokens(ctx_server.vocab);
+            for (const auto & value : observed) {
+                if (!value.is_number_integer()) {
+                    throw std::invalid_argument("sidecar_observed_tokens must contain integer token IDs");
+                }
+                const int64_t token = value.get<int64_t>();
+                if (token < 0 || token >= n_vocab) {
+                    throw std::invalid_argument("sidecar_observed_tokens contains an out-of-range token ID");
+                }
+                observed_tokens.push_back(static_cast<llama_token>(token));
+            }
+        }
+
         // tasks.reserve(inputs.size()); // TODO: this is inaccurate due to child tasks
 
         // message delimiters for checkpointing
@@ -4921,6 +5356,65 @@ std::unique_ptr<server_res_generator> server_routes::handle_completions_impl(
                     data);
 
             task.params.sidecar_id = json_value(data, "sidecar_id", std::string());
+            task.params.sidecar_capture_episode = json_value(
+                data, "sidecar_capture_episode", false);
+            task.params.sidecar_debug_internal_plasticity = json_value(
+                data, "sidecar_debug_internal_plasticity", false);
+            task.params.sidecar_debug_capture_write_directions = json_value(
+                data, "sidecar_debug_capture_write_directions", false);
+            task.params.sidecar_debug_sham = json_value(
+                data, "sidecar_debug_sham", false);
+            if (task.params.sidecar_debug_sham && !task.params.sidecar_debug_internal_plasticity) {
+                throw std::invalid_argument("sidecar_debug_sham requires sidecar_debug_internal_plasticity");
+            }
+            if (task.params.sidecar_debug_internal_plasticity) {
+                if (has_observed_sequence) {
+                    throw std::invalid_argument("sidecar_observed_tokens cannot enable internal reasoning plasticity");
+                }
+                if (task.params.sidecar_id.empty()) {
+                    throw std::invalid_argument("sidecar_debug_internal_plasticity requires sidecar_id");
+                }
+                task.params.cache_prompt = false;
+            }
+            if (task.params.sidecar_debug_sham) {
+                const auto & sham_events = data.at("sidecar_debug_sham_events");
+                if (!sham_events.is_array()) {
+                    throw std::invalid_argument("sidecar_debug_sham_events must be an array");
+                }
+                task.params.sidecar_debug_sham_events.reserve(sham_events.size());
+                for (const auto & value : sham_events) {
+                    if (!value.is_object() ||
+                            !value.contains("token_index") || !value.at("token_index").is_number_integer() ||
+                            !value.contains("direction") || !value.at("direction").is_array() ||
+                            !value.contains("gate") || !value.at("gate").is_number() ||
+                            !value.contains("effective_eta") || !value.at("effective_eta").is_number()) {
+                        throw std::invalid_argument("invalid sidecar_debug_sham_events entry");
+                    }
+                    sidecar_debug_sham_event event;
+                    event.token_index = value.at("token_index").get<int64_t>();
+                    event.gate = value.at("gate").get<double>();
+                    event.effective_eta = value.at("effective_eta").get<double>();
+                    event.original_observed_token = value.value("original_observed_token", llama_token(-1));
+                    event.original_baseline_token = value.value("original_baseline_token", llama_token(-1));
+                    event.source_event_index = value.value("source_event_index", int64_t(-1));
+                    event.direction.reserve(value.at("direction").size());
+                    for (const auto & component : value.at("direction")) {
+                        if (!component.is_number()) {
+                            throw std::invalid_argument("sidecar_debug_sham_events direction must contain numbers");
+                        }
+                        event.direction.push_back(component.get<float>());
+                    }
+                    task.params.sidecar_debug_sham_events.push_back(std::move(event));
+                }
+            }
+            if (has_observed_sequence) {
+                task.params.sidecar_observed_tokens = observed_tokens;
+                task.params.n_predict = static_cast<int32_t>(observed_tokens.size());
+                task.params.cache_prompt = false;
+                if (task.params.sidecar_id.empty()) {
+                    throw std::invalid_argument("sidecar_observed_tokens requires sidecar_id");
+                }
+            }
             if (!task.params.sidecar_id.empty()) {
                 const bool speculative = std::any_of(
                         params.speculative.types.begin(), params.speculative.types.end(),
@@ -4934,6 +5428,9 @@ std::unique_ptr<server_res_generator> server_routes::handle_completions_impl(
                         task.params.n_cmpl,
                         task.params.n_predict != -1 ? task.params.n_predict : params.n_predict,
                         speculative,
+                        task.params.sidecar_capture_episode,
+                        task.params.sidecar_debug_internal_plasticity,
+                        has_observed_sequence,
                         sidecar_error)) {
                     throw std::invalid_argument(sidecar_error);
                 }
@@ -5195,6 +5692,10 @@ void server_routes::init_routes() {
         return path;
     };
 
+    auto optional_sidecar_path = [](const json & body) {
+        return json_value(body, "path", std::string());
+    };
+
     this->get_sidecar_status = [this, sidecar_response, sidecar_error](const server_http_req & req) {
         try {
             return sidecar_response(ctx_server.sidecars.status(req.get_param("id")));
@@ -5226,11 +5727,11 @@ void server_routes::init_routes() {
         }
     };
 
-    this->post_sidecar_save = [this, sidecar_body, required_sidecar_id, required_sidecar_path, sidecar_response, sidecar_error](const server_http_req & req) {
+    this->post_sidecar_save = [this, sidecar_body, required_sidecar_id, optional_sidecar_path, sidecar_response, sidecar_error](const server_http_req & req) {
         try {
             const json body = sidecar_body(req);
             return sidecar_response(ctx_server.sidecars.save(
-                required_sidecar_id(body), required_sidecar_path(body)));
+                required_sidecar_id(body), optional_sidecar_path(body)));
         } catch (const std::exception & e) {
             return sidecar_error(e.what());
         }
@@ -5348,6 +5849,109 @@ void server_routes::init_routes() {
                 json_value(body, "observed_target", std::string())));
         } catch (const std::exception & e) {
             return sidecar_error(e.what());
+        }
+    };
+
+    this->post_sidecar_observe_sequence = [this, sidecar_body, required_sidecar_id](const server_http_req & req) -> server_http_res_ptr {
+        auto res = create_response();
+        try {
+            const json body = sidecar_body(req);
+            const std::string id = required_sidecar_id(body);
+            if (!body.contains("text") || !body.at("text").is_string()) {
+                throw std::invalid_argument("text must be a string");
+            }
+
+            const std::string text = body.at("text").get<std::string>();
+            const bool capture_debug_vectors = json_value(
+                body, "debug_capture_vectors", false);
+            const std::string mode = body.contains("learning_mode") ?
+                json_value(body, "learning_mode", std::string()) :
+                json_value(body, "mode", std::string("batch"));
+            if (mode != "exact-token" && mode != "chunked" && mode != "batch") {
+                throw std::invalid_argument(
+                    "learning_mode must be exact-token, chunked, or batch");
+            }
+
+            const int64_t tokenize_started_us = ggml_time_us();
+            const llama_tokens observed_tokens = tokenize_mixed(
+                ctx_server.vocab, text, false, true);
+            if (observed_tokens.empty()) {
+                throw std::invalid_argument("text tokenized to an empty sequence");
+            }
+
+            llama_tokens context_tokens;
+            if (body.contains("context")) {
+                if (!body.at("context").is_string()) {
+                    throw std::invalid_argument("context must be a string");
+                }
+                context_tokens = tokenize_mixed(
+                    ctx_server.vocab, body.at("context"), true, true);
+            } else {
+                context_tokens = tokenize_mixed(
+                    ctx_server.vocab, std::string(), true, true);
+            }
+            if (context_tokens.empty()) {
+                const llama_token bos = llama_vocab_bos(ctx_server.vocab);
+                if (bos == LLAMA_TOKEN_NULL) {
+                    throw std::invalid_argument(
+                        "the loaded tokenizer has no implicit observation context; provide context explicitly");
+                }
+                context_tokens.push_back(bos);
+            }
+            const int64_t tokenize_us = ggml_time_us() - tokenize_started_us;
+
+            if (mode == "exact-token") {
+                json completion_body = {
+                    {"prompt", context_tokens},
+                    {"sidecar_id", id},
+                    {"sidecar_observed_tokens", observed_tokens},
+                    {"n_predict", observed_tokens.size()},
+                    {"cache_prompt", false},
+                    {"stream", false},
+                    {"temperature", 0.0},
+                    {"sidecar_debug_capture_write_directions", capture_debug_vectors},
+                };
+                std::vector<raw_buffer> files;
+                return handle_completions_impl(
+                    req,
+                    SERVER_TASK_TYPE_COMPLETION,
+                    completion_body,
+                    files,
+                    TASK_RESPONSE_TYPE_NONE);
+            }
+
+            const int32_t chunk_size = mode == "chunked" ?
+                json_value(body, "chunk_size", 16) : int32_t(observed_tokens.size());
+            if (chunk_size < 1) {
+                throw std::invalid_argument("chunk_size must be at least 1");
+            }
+
+            server_task task(SERVER_TASK_TYPE_SIDECAR_OBSERVE_SEQUENCE);
+            task.id = res->rd.get_new_id();
+            task.tokens = server_tokens(context_tokens, false);
+            task.params.sidecar_id = id;
+            task.params.sidecar_observed_tokens = observed_tokens;
+            task.params.sidecar_debug_capture_write_directions = capture_debug_vectors;
+            task.sidecar_observation_mode = mode;
+            task.sidecar_observation_chunk_size = chunk_size;
+            task.sidecar_observation_input_chars = text.size();
+            task.sidecar_observation_tokenize_us = tokenize_us;
+            res->rd.post_task(std::move(task));
+
+            auto result = res->rd.next(req.should_stop);
+            if (!result) {
+                GGML_ASSERT(req.should_stop());
+                return res;
+            }
+            if (result->is_error()) {
+                res->error(result->to_json());
+                return res;
+            }
+            res->ok(result->to_json());
+            return res;
+        } catch (const std::exception & e) {
+            res->error(format_error_response(e.what(), ERROR_TYPE_INVALID_REQUEST));
+            return res;
         }
     };
 

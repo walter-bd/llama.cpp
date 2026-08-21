@@ -11,6 +11,24 @@ export const API_CHAT = {
 	CONTROL: './v1/chat/completions/control'
 };
 
+// Plastic sidecar lifecycle and observation routes. The sidecar remains an
+// explicit opt-in extension to normal chat requests.
+export const API_SIDECAR = {
+	BASE: './v1/sidecar',
+	CREATE: './v1/sidecar/create',
+	LEARNING: './v1/sidecar/learning',
+	LOAD: './v1/sidecar/load',
+	OBSERVE: './v1/sidecar/observe',
+	OBSERVE_SEQUENCE: './v1/sidecar/observe_sequence',
+	RESET: './v1/sidecar/reset',
+	SAVE: './v1/sidecar/save',
+	STATUS: './v1/sidecar/status',
+	UNLOAD: './v1/sidecar/unload'
+};
+
+export const API_NATIVE_COMPLETION = './completion';
+export const API_TOKENIZE = './tokenize';
+
 // slot introspection, requires the --slots flag on the server
 export const API_SLOTS = {
 	LIST: './slots'

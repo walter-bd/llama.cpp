@@ -162,6 +162,7 @@ struct server_routes {
     server_http_context::handler_t post_sidecar_unload;
     server_http_context::handler_t post_sidecar_learning;
     server_http_context::handler_t post_sidecar_observe;
+    server_http_context::handler_t post_sidecar_observe_sequence;
     server_http_context::handler_t delete_sidecar;
 
     // to be used in router mode

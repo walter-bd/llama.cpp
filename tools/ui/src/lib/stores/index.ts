@@ -45,6 +45,8 @@ export { serverStore } from './server.svelte';
 // SETTINGS / UI PREFERENCES
 export { settingsStore } from './settings.svelte';
 
+export { sidecarStore } from './sidecar.svelte';
+
 export { settingsReferrer } from './settings-referrer.svelte';
 
 export { permissionsStore } from './permissions.svelte';

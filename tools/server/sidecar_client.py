@@ -128,6 +128,33 @@ class SidecarClient:
             body["observed_target"] = observed_target
         return self._request("POST", "/v1/sidecar/observe", body)
 
+    def observe_sequence(
+        self,
+        sidecar_id: str,
+        text: str,
+        *,
+        mode: str = "batch",
+        chunk_size: int | None = None,
+        context: str | None = None,
+        debug_capture_vectors: bool = False,
+    ) -> Any:
+        if mode not in {"exact-token", "chunked", "batch"}:
+            raise ValueError("mode must be exact-token, chunked, or batch")
+        if mode == "chunked" and (chunk_size is None or chunk_size < 1):
+            raise ValueError("chunked mode requires chunk_size >= 1")
+        body: dict[str, Any] = {
+            "id": sidecar_id,
+            "text": text,
+            "mode": mode,
+        }
+        if chunk_size is not None:
+            body["chunk_size"] = chunk_size
+        if context is not None:
+            body["context"] = context
+        if debug_capture_vectors:
+            body["debug_capture_vectors"] = True
+        return self._request("POST", "/v1/sidecar/observe_sequence", body)
+
     def debug_write_direction(
         self,
         sidecar_id: str,

@@ -1,0 +1,22 @@
+{
+  "BATCH": {
+    "components_after": 27,
+    "sha256_after": "01fbba6d416e29df36d2ac040225a97c9f83e89c63eaa8be9dac80ea7278854c"
+  },
+  "CHUNK16": {
+    "components_after": 27,
+    "sha256_after": "5a6b09f16305f6ac5c94f8f1679b9c247b820090e802c4ce8ef96696d634d49b"
+  },
+  "CHUNK32": {
+    "components_after": 27,
+    "sha256_after": "fa5c1de13820cab7150af0a8f2164f1e1d0493dbe001bfdae56e073ed1858582"
+  },
+  "CHUNK4": {
+    "components_after": 27,
+    "sha256_after": "7cb1ed8fb79773ef1b65b4719157b8da440b7b4ce29009411b376c978c7ac9c9"
+  },
+  "EXACT": {
+    "components_after": 27,
+    "sha256_after": "cf54a4d0dc643ef659c4a53bb9a57561f9c39fa6f7e2eddf83aecedc37931412"
+  }
+}

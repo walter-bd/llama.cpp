@@ -280,6 +280,9 @@ export interface ApiChatCompletionRequest {
 	tools?: ApiChatCompletionTool[];
 	// Reasoning parameters
 	reasoning_format?: string;
+	// Plastic sidecar request extensions
+	sidecar_id?: string;
+	sidecar_debug_internal_plasticity?: boolean;
 	// Generation parameters
 	temperature?: number;
 	max_tokens?: number;
@@ -366,6 +369,96 @@ export interface ApiChatCompletionResponse {
 		};
 		finish_reason?: string | null;
 	}>;
+}
+
+export interface ApiSidecarStatus {
+	enabled?: boolean;
+	id: string;
+	loaded: boolean;
+	format_version?: number;
+	learning_enabled: boolean;
+	sha256: string;
+	components: number;
+	width: number;
+	bytes?: number;
+	writes?: number;
+	retrievals?: number;
+	mean_B?: number;
+	max_B?: number;
+	cumulative_B?: number;
+	injection_profile_id?: string;
+	profile_supported?: boolean;
+	profile_error?: string;
+	query_hook?: string;
+	recursive_state_path_supported?: boolean;
+	query_captures?: number;
+	injection_site_dispatches?: number;
+	injection_site_24?: number;
+	injection_site_28?: number;
+	injection_mode?: string;
+	final_logit_injection_supported?: boolean;
+}
+
+export interface ApiSidecarStatusResponse {
+	enabled: boolean;
+	sidecars?: ApiSidecarStatus[];
+}
+
+export interface ApiSidecarMutationResponse {
+	id: string;
+	updated?: boolean;
+	reason?: string;
+	sha256?: string;
+	sha256_before?: string;
+	sha256_after?: string;
+	components?: number;
+	write_occurred?: boolean;
+	G?: number;
+	effective_eta?: number;
+	write_direction_norm?: number;
+	update_norm?: number;
+	observed_token_id?: number;
+	observed_token?: string;
+	episode_id?: string;
+	[key: string]: unknown;
+}
+
+export type ApiSidecarLearningMode = 'batch' | 'chunked' | 'exact-token';
+
+export interface ApiSidecarSequenceResponse {
+	id?: string;
+	learning_mode?: ApiSidecarLearningMode;
+	input_chars?: number;
+	tokens_observed?: number;
+	write_opportunities?: number;
+	writes_realized?: number;
+	prediction_matches?: number;
+	components_added?: number;
+	components_after?: number;
+	chunk_size?: number;
+	chunks_processed?: number;
+	sha256_before?: string;
+	sha256_after?: string;
+	elapsed_ms?: number;
+	total_ms?: number;
+	observed_tokens_per_second?: number;
+	transactional?: boolean;
+	fast_approximation?: boolean;
+	plastic_state_recurs_between_chunks?: boolean;
+	write_commit_strategy?: string;
+	updated?: boolean;
+	reason?: string;
+	sidecar_experience_events?: Array<Record<string, unknown>> | number;
+	timings?: { predicted_ms?: number; predicted_n?: number };
+	[key: string]: unknown;
+}
+
+export interface ApiNativeCompletionResponse {
+	sidecar_episode_id?: string;
+	sidecar_experience_events?: number;
+	content?: string;
+	stop_type?: string;
+	[key: string]: unknown;
 }
 
 export interface ApiSlotData {

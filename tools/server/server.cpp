@@ -253,6 +253,7 @@ int llama_server(common_params & params, int argc, char ** argv) {
         ctx_http.post("/v1/sidecar/unload",     ex_wrapper(routes.post_sidecar_unload));
         ctx_http.post("/v1/sidecar/learning",   ex_wrapper(routes.post_sidecar_learning));
         ctx_http.post("/v1/sidecar/observe",    ex_wrapper(routes.post_sidecar_observe));
+        ctx_http.post("/v1/sidecar/observe_sequence", ex_wrapper(routes.post_sidecar_observe_sequence));
         ctx_http.del ("/v1/sidecar/:id",         ex_wrapper(routes.delete_sidecar));
     }
     ctx_http.post("/v1/chat/completions/control", ex_wrapper(routes.post_control));

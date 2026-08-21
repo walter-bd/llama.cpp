@@ -7,6 +7,7 @@
 #include <unordered_set>
 #include <list>
 #include <map>
+#include <vector>
 
 // TODO: prevent including the whole server-common.h as we only use server_tokens
 #include "server-common.h"
@@ -22,6 +23,7 @@ enum server_task_type {
     SERVER_TASK_TYPE_CONTROL,
     SERVER_TASK_TYPE_NEXT_RESPONSE,
     SERVER_TASK_TYPE_METRICS,
+    SERVER_TASK_TYPE_SIDECAR_OBSERVE_SEQUENCE,
     SERVER_TASK_TYPE_SLOT_SAVE,
     SERVER_TASK_TYPE_SLOT_RESTORE,
     SERVER_TASK_TYPE_SLOT_ERASE,
@@ -47,6 +49,18 @@ enum stop_type {
     STOP_TYPE_LIMIT,
 };
 
+// One yoke entry for the diagnostic SHAM arm.  The direction is transient
+// request data and is never part of sidecar_v1 serialization.
+struct sidecar_debug_sham_event {
+    int64_t token_index = -1;
+    std::vector<float> direction;
+    double gate = 0.0;
+    double effective_eta = 0.0;
+    llama_token original_observed_token = -1;
+    llama_token original_baseline_token = -1;
+    int64_t source_event_index = -1;
+};
+
 struct task_params {
     bool stream          = false;
     bool include_usage   = false;
@@ -57,6 +71,22 @@ struct task_params {
     // Empty keeps the ordinary llama-server path.  A non-empty value selects
     // one registered external sidecar for this request.
     std::string sidecar_id;
+
+    // Explicitly capture the one-token episode consumed by /v1/sidecar/observe.
+    // Selecting a sidecar for ordinary chat is read-only by default.
+    bool sidecar_capture_episode = false;
+
+    // Experimental native experience path. The server consumes this
+    // already-tokenized sequence in one slot, preserving per-token
+    // transaction semantics without one HTTP request per token.
+    llama_tokens sidecar_observed_tokens;
+
+    // Experimental, request-local reasoning-time plasticity.  This is
+    // intentionally default-off and never mutates the requested sidecar.
+    bool sidecar_debug_internal_plasticity = false;
+    bool sidecar_debug_capture_write_directions = false;
+    bool sidecar_debug_sham = false;
+    std::vector<sidecar_debug_sham_event> sidecar_debug_sham_events;
 
     int32_t sse_ping_interval = 30; // seconds between SSE comment pings while the stream stays silent, -1 disables
 
@@ -178,6 +208,14 @@ struct server_task {
 
     // used by SERVER_TASK_TYPE_SET_LORA
     std::map<int, float> set_lora; // mapping adapter ID -> scale
+
+    // Scheduler-owned fast sidecar acquisition. The HTTP thread tokenizes the
+    // explicit context and observed text, then the main model thread performs
+    // one causal batched capture over them.
+    std::string sidecar_observation_mode;
+    int32_t sidecar_observation_chunk_size = 0;
+    int64_t sidecar_observation_input_chars = 0;
+    int64_t sidecar_observation_tokenize_us = 0;
 
     server_task() = default;
 
@@ -355,6 +393,7 @@ struct server_task_result_cmpl_final : server_task_result {
     std::string        oaicompat_cmpl_id;
     common_chat_msg    oaicompat_msg; // to be populated by update()
     std::string        sidecar_episode_id;
+    std::vector<json>   sidecar_experience_events;
 
     std::vector<common_chat_msg_diff> oaicompat_msg_diffs; // to be populated by update()
     bool is_updated = false;
@@ -495,6 +534,14 @@ struct server_task_result_error : server_task_result {
     }
 
     virtual json to_json() override;
+};
+
+struct server_task_result_sidecar_sequence : server_task_result {
+    json data;
+
+    virtual json to_json() override {
+        return data;
+    }
 };
 
 struct server_task_result_metrics : server_task_result {

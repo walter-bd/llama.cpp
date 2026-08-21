@@ -1,0 +1,52 @@
+{
+  "BATCH": {
+    "chunk_size": null,
+    "elapsed_ms": 233.645,
+    "learning_mode": "batch",
+    "llama_decode_calls": 1,
+    "observed_tokens_per_second": 149.79991012005394,
+    "speedup_vs_exact": 8.633704979777011,
+    "tokens_observed": 35,
+    "writes_realized": 27
+  },
+  "CHUNK16": {
+    "chunk_size": 16,
+    "elapsed_ms": 255.242,
+    "learning_mode": "chunked",
+    "llama_decode_calls": 3,
+    "observed_tokens_per_second": 137.12476786735724,
+    "speedup_vs_exact": 7.903174242483602,
+    "tokens_observed": 35,
+    "writes_realized": 27
+  },
+  "CHUNK32": {
+    "chunk_size": 32,
+    "elapsed_ms": 249.824,
+    "learning_mode": "chunked",
+    "llama_decode_calls": 2,
+    "observed_tokens_per_second": 140.09862943512232,
+    "speedup_vs_exact": 8.074572499039322,
+    "tokens_observed": 35,
+    "writes_realized": 27
+  },
+  "CHUNK4": {
+    "chunk_size": 4,
+    "elapsed_ms": 362.151,
+    "learning_mode": "chunked",
+    "llama_decode_calls": 9,
+    "observed_tokens_per_second": 96.64476972312654,
+    "speedup_vs_exact": 5.570113019154993,
+    "tokens_observed": 35,
+    "writes_realized": 27
+  },
+  "EXACT": {
+    "chunk_size": null,
+    "elapsed_ms": 2017.222,
+    "learning_mode": "exact-token",
+    "llama_decode_calls": 35,
+    "observed_tokens_per_second": 17.350594034766626,
+    "speedup_vs_exact": 1.0,
+    "tokens_observed": 35,
+    "writes_realized": 27
+  }
+}

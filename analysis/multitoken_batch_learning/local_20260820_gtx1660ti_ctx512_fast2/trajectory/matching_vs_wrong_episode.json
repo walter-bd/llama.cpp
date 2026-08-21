@@ -1,0 +1,4 @@
+{
+  "status": "not_run",
+  "reason": "Retrieval-query vectors were unavailable through existing instrumentation, so matching versus unrelated episode-key trajectory analysis was not performed."
+}

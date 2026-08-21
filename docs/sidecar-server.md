@@ -83,6 +83,7 @@ All endpoints are under `/v1/sidecar/`:
 | `DELETE` | `/{id}` | Delete the in-memory sidecar. It never deletes files. |
 | `POST` | `/learning` | Enable or disable explicit writes. |
 | `POST` | `/observe` | Consume an episode and perform one forward-only write. |
+| `POST` | `/observe_sequence` | Tokenize and learn a multi-token experience in exact, chunked, or batch mode. |
 
 Paths supplied to load/save are resolved below the configured
 `--sidecar-dir` root. Absolute paths are accepted only when they remain inside
@@ -92,10 +93,10 @@ that root. Directory traversal is rejected.
 
 Add an optional `sidecar_id` to `/v1/chat/completions` or the completion
 request. An unknown ID is an error; the server never falls back to the last
-active sidecar. A sidecar request returns `sidecar_episode_id` when learning
-is enabled. The handle is consumed by `/observe` and invalidated by reset,
-unload, model reload, or expiry. It intentionally survives ordinary request
-completion so an external outcome can be submitted afterward.
+active sidecar. Ordinary sidecar chat is read-only even when persistent
+teaching is enabled. Set `sidecar_capture_episode: true` on an explicit
+one-token request to receive a `sidecar_episode_id`. The handle is consumed by
+`/observe` and invalidated by reset, unload, model reload, or expiry.
 
 Example:
 
@@ -104,6 +105,17 @@ Example:
   "messages": [{"role": "user", "content": "..."}],
   "sidecar_id": "agent",
   "max_tokens": 32
+}
+```
+
+To capture a token-local episode for a later explicit `/observe` call:
+
+```json
+{
+  "messages": [{"role": "user", "content": "Produce one candidate token."}],
+  "sidecar_id": "agent",
+  "sidecar_capture_episode": true,
+  "max_tokens": 1
 }
 ```
 
@@ -152,6 +164,51 @@ chat/inference -> episode_id -> external outcome -> /observe -> writer
 ordinary generation update the bank. The validated gate and `eta` remain in
 the existing shared implementation.
 
+### Multi-token external experience
+
+`POST /v1/sidecar/observe_sequence` is the normal text-level teaching API. It
+accepts a sidecar ID, arbitrary non-empty text, and one acquisition mode:
+
+```json
+{
+  "id": "friend-test",
+  "text": "The room costs five gold pieces.",
+  "mode": "batch"
+}
+```
+
+The server tokenizes the text with the loaded model. For every observed token
+it preserves the validated token-local writer:
+
+```text
+q_t = normalize(W_out[y_t] - W_out[y_hat_t])
+```
+
+`y_hat_t` is the frozen-model greedy prediction from the causal observed
+prefix and the key is the same `result_norm` source representation used by the
+single-token path. Captured events are applied to sidecar state in token order,
+so gate/counter mutation is deterministic and ordered. The API is
+transactional: a fatal acquisition/write error restores the original sidecar.
+
+Modes:
+
+- `exact-token`: reference path, one model step/write cycle per token. Earlier
+  writes can influence later acquisition states.
+- `chunked`: multiple causal llama.cpp decode chunks, then ordered writes.
+  `chunk_size` is required and must be at least one.
+- `batch`: one causal llama.cpp decode when the sequence fits, then ordered
+  writes.
+
+`chunked` and `batch` are fast acquisition approximations. Their acquisition
+states use the sidecar state present at the start of the operation; writes are
+committed after acquisition and do not recur into later positions in that same
+operation. They preserve token-local targets, baselines, keys, directions, and
+ordered logical updates, but are not claimed identical to `exact-token`.
+
+The compact response includes token/write counts, chunk/decode counts, timing
+breakdown, observed learning throughput, and state hashes. Debug vector capture
+is disabled by default and exists only for equivalence instrumentation.
+
 ## Portable state
 
 `sidecar_v1` is a deterministic directory containing `manifest.json`,
@@ -195,6 +252,19 @@ validated Step-30 write direction. Callers do not provide a model-width
 vector. Multi-token strings are rejected. The explicit
 `debug_write_direction` field is retained only for research/debug parity and
 is not the normal learning contract.
+
+For normal sentence learning use `SidecarClient.observe_sequence`:
+
+```python
+result = client.observe_sequence(
+    "task-1",
+    "The room costs five gold pieces.",
+    mode="batch",
+)
+```
+
+Use `mode="chunked", chunk_size=16` for the intermediate execution mode or
+`mode="exact-token"` for the slow reference path.
 
 The model stays loaded while sidecars are created, reset, saved, unloaded,
 reloaded, and deleted.

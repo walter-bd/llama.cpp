@@ -591,6 +591,18 @@ struct llama_sampler * common_sampler_get(const struct common_sampler * gsmpl) {
     return gsmpl->chain;
 }
 
+bool common_sampler_has_reasoning_budget(const struct common_sampler * gsmpl) {
+    return gsmpl != nullptr && gsmpl->rbudget != nullptr;
+}
+
+common_reasoning_budget_state common_sampler_reasoning_state(const struct common_sampler * gsmpl) {
+    if (!gsmpl || !gsmpl->rbudget) {
+        return REASONING_BUDGET_IDLE;
+    }
+
+    return common_reasoning_budget_get_state(gsmpl->rbudget);
+}
+
 llama_token common_sampler_sample(struct common_sampler * gsmpl, struct llama_context * ctx, int idx, bool grammar_first) {
     llama_synchronize(ctx);
 

@@ -1,0 +1,1 @@
+{"status":"not_instrumented","reason":"The current public retrieval path does not expose per-token retrieval query vectors. No reader instrumentation or semantics were changed for this acquisition-speed task."}

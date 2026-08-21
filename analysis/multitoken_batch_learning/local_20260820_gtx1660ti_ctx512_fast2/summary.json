@@ -1,0 +1,289 @@
+{
+  "behavioral_pilot": [
+    {
+      "arm": "F",
+      "content": " $100 per night. The room is booked for",
+      "experience": "The room costs five gold pieces.",
+      "id": "overwrite-room-price",
+      "probe": "The room costs",
+      "regime": "overwrite",
+      "target": "five gold pieces",
+      "target_occurs": false
+    },
+    {
+      "arm": "EXACT",
+      "content": " 1000 rubles.\nThe main thing",
+      "experience": "The room costs five gold pieces.",
+      "id": "overwrite-room-price",
+      "probe": "The room costs",
+      "regime": "overwrite",
+      "target": "five gold pieces",
+      "target_occurs": false,
+      "tokens_observed": null,
+      "writes_realized": 7
+    },
+    {
+      "arm": "CHUNK4",
+      "content": " 1000 rubles.\nThe main thing",
+      "experience": "The room costs five gold pieces.",
+      "id": "overwrite-room-price",
+      "probe": "The room costs",
+      "regime": "overwrite",
+      "target": "five gold pieces",
+      "target_occurs": false,
+      "tokens_observed": 7,
+      "writes_realized": 7
+    },
+    {
+      "arm": "CHUNK16",
+      "content": " 1000 rubles.\nThe main thing",
+      "experience": "The room costs five gold pieces.",
+      "id": "overwrite-room-price",
+      "probe": "The room costs",
+      "regime": "overwrite",
+      "target": "five gold pieces",
+      "target_occurs": false,
+      "tokens_observed": 7,
+      "writes_realized": 7
+    },
+    {
+      "arm": "CHUNK32",
+      "content": " 1000 rubles.\nThe main thing",
+      "experience": "The room costs five gold pieces.",
+      "id": "overwrite-room-price",
+      "probe": "The room costs",
+      "regime": "overwrite",
+      "target": "five gold pieces",
+      "target_occurs": false,
+      "tokens_observed": 7,
+      "writes_realized": 7
+    },
+    {
+      "arm": "BATCH",
+      "content": " 1000 rubles.\nThe main thing",
+      "experience": "The room costs five gold pieces.",
+      "id": "overwrite-room-price",
+      "probe": "The room costs",
+      "regime": "overwrite",
+      "target": "five gold pieces",
+      "target_occurs": false,
+      "tokens_observed": 7,
+      "writes_realized": 7
+    },
+    {
+      "arm": "F",
+      "content": " a type of seal that can be found in the Neral",
+      "experience": "The Neral seal is cobalt amber.",
+      "id": "novel-neral-seal",
+      "probe": "The Neral seal is",
+      "regime": "novel",
+      "target": "cobalt amber",
+      "target_occurs": false
+    },
+    {
+      "arm": "EXACT",
+      "content": " a seal that appears in the video game The Last of Us",
+      "experience": "The Neral seal is cobalt amber.",
+      "id": "novel-neral-seal",
+      "probe": "The Neral seal is",
+      "regime": "novel",
+      "target": "cobalt amber",
+      "target_occurs": false,
+      "tokens_observed": null,
+      "writes_realized": 7
+    },
+    {
+      "arm": "CHUNK4",
+      "content": " a seal that appears in the video game The Last of Us",
+      "experience": "The Neral seal is cobalt amber.",
+      "id": "novel-neral-seal",
+      "probe": "The Neral seal is",
+      "regime": "novel",
+      "target": "cobalt amber",
+      "target_occurs": false,
+      "tokens_observed": 9,
+      "writes_realized": 7
+    },
+    {
+      "arm": "CHUNK16",
+      "content": " a seal that appears in the video game The Last of Us",
+      "experience": "The Neral seal is cobalt amber.",
+      "id": "novel-neral-seal",
+      "probe": "The Neral seal is",
+      "regime": "novel",
+      "target": "cobalt amber",
+      "target_occurs": false,
+      "tokens_observed": 9,
+      "writes_realized": 7
+    },
+    {
+      "arm": "CHUNK32",
+      "content": " a seal that appears in the video game The Last of Us",
+      "experience": "The Neral seal is cobalt amber.",
+      "id": "novel-neral-seal",
+      "probe": "The Neral seal is",
+      "regime": "novel",
+      "target": "cobalt amber",
+      "target_occurs": false,
+      "tokens_observed": 9,
+      "writes_realized": 7
+    },
+    {
+      "arm": "BATCH",
+      "content": " a seal that appears in the video game The Last of Us",
+      "experience": "The Neral seal is cobalt amber.",
+      "id": "novel-neral-seal",
+      "probe": "The Neral seal is",
+      "regime": "novel",
+      "target": "cobalt amber",
+      "target_occurs": false,
+      "tokens_observed": 9,
+      "writes_realized": 7
+    }
+  ],
+  "equivalence": {
+    "BATCH": {
+      "baseline_token_agreement": 1.0,
+      "gate_agreement": 1.0,
+      "key_cosine": {
+        "mean": 0.9994304392444515,
+        "median": 0.9995958254228677,
+        "minimum": 0.996058956147545
+      },
+      "writer_cosine": {
+        "mean": 1.0000000000000002,
+        "median": 1.0000000000000002,
+        "minimum": 1.0
+      }
+    },
+    "CHUNK16": {
+      "baseline_token_agreement": 1.0,
+      "gate_agreement": 1.0,
+      "key_cosine": {
+        "mean": 0.9994452604464734,
+        "median": 0.9995863371627721,
+        "minimum": 0.9976036562526134
+      },
+      "writer_cosine": {
+        "mean": 1.0000000000000002,
+        "median": 1.0000000000000002,
+        "minimum": 1.0
+      }
+    },
+    "CHUNK32": {
+      "baseline_token_agreement": 1.0,
+      "gate_agreement": 1.0,
+      "key_cosine": {
+        "mean": 0.9994760300554717,
+        "median": 0.9995735178300468,
+        "minimum": 0.9974141989684152
+      },
+      "writer_cosine": {
+        "mean": 1.0000000000000002,
+        "median": 1.0000000000000002,
+        "minimum": 1.0
+      }
+    },
+    "CHUNK4": {
+      "baseline_token_agreement": 1.0,
+      "gate_agreement": 1.0,
+      "key_cosine": {
+        "mean": 0.9998386716464641,
+        "median": 0.9998447241884935,
+        "minimum": 0.9996043434206765
+      },
+      "writer_cosine": {
+        "mean": 1.0000000000000002,
+        "median": 1.0000000000000002,
+        "minimum": 1.0
+      }
+    }
+  },
+  "experience": "The room costs five gold pieces, includes breakfast, overlooks the old harbor, and remains available to quiet travelers who arrive before sunset with a written reservation during the winter market.",
+  "generation_samples": [
+    {
+      "content": " $100 per night. The",
+      "label": "F",
+      "tokens_predicted": 8
+    },
+    {
+      "content": " $100 per night. The",
+      "label": "EXACT",
+      "tokens_predicted": 8
+    },
+    {
+      "content": " $100 per night. The",
+      "label": "CHUNK4",
+      "tokens_predicted": 8
+    },
+    {
+      "content": " $100 per night. The",
+      "label": "CHUNK16",
+      "tokens_predicted": 8
+    },
+    {
+      "content": " $100 per night. The",
+      "label": "CHUNK32",
+      "tokens_predicted": 8
+    },
+    {
+      "content": " $100 per night. The",
+      "label": "BATCH",
+      "tokens_predicted": 8
+    }
+  ],
+  "status": "batch_learning_fast_approximation_measured",
+  "throughput": {
+    "BATCH": {
+      "chunk_size": null,
+      "elapsed_ms": 233.645,
+      "learning_mode": "batch",
+      "llama_decode_calls": 1,
+      "observed_tokens_per_second": 149.79991012005394,
+      "speedup_vs_exact": 8.633704979777011,
+      "tokens_observed": 35,
+      "writes_realized": 27
+    },
+    "CHUNK16": {
+      "chunk_size": 16,
+      "elapsed_ms": 255.242,
+      "learning_mode": "chunked",
+      "llama_decode_calls": 3,
+      "observed_tokens_per_second": 137.12476786735724,
+      "speedup_vs_exact": 7.903174242483602,
+      "tokens_observed": 35,
+      "writes_realized": 27
+    },
+    "CHUNK32": {
+      "chunk_size": 32,
+      "elapsed_ms": 249.824,
+      "learning_mode": "chunked",
+      "llama_decode_calls": 2,
+      "observed_tokens_per_second": 140.09862943512232,
+      "speedup_vs_exact": 8.074572499039322,
+      "tokens_observed": 35,
+      "writes_realized": 27
+    },
+    "CHUNK4": {
+      "chunk_size": 4,
+      "elapsed_ms": 362.151,
+      "learning_mode": "chunked",
+      "llama_decode_calls": 9,
+      "observed_tokens_per_second": 96.64476972312654,
+      "speedup_vs_exact": 5.570113019154993,
+      "tokens_observed": 35,
+      "writes_realized": 27
+    },
+    "EXACT": {
+      "chunk_size": null,
+      "elapsed_ms": 2017.222,
+      "learning_mode": "exact-token",
+      "llama_decode_calls": 35,
+      "observed_tokens_per_second": 17.350594034766626,
+      "speedup_vs_exact": 1.0,
+      "tokens_observed": 35,
+      "writes_realized": 27
+    }
+  },
+  "tokens_observed": 35
+}

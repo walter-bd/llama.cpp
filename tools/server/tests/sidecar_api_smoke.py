@@ -113,6 +113,7 @@ def run(model: Path, sidecar: Path, server_path: Path) -> dict:
             first = client.chat(
                 [{"role": "user", "content": "Say one word."}],
                 sidecar_id="agent",
+                sidecar_capture_episode=True,
                 max_tokens=1,
                 stream=False,
             )
@@ -184,19 +185,89 @@ def run(model: Path, sidecar: Path, server_path: Path) -> dict:
             )
             assert invalid_observe["status"] == 400
 
-            multi_token_generation = expect_error(
-                client,
-                client.chat,
+            chat_before = client.status("agent")["sha256"]
+            multi_token_generation = client.chat(
                 [{"role": "user", "content": "Say two words."}],
                 sidecar_id="agent",
                 max_tokens=2,
                 stream=False,
             )
-            assert multi_token_generation["status"] == 400
+            assert "sidecar_episode_id" not in multi_token_generation
+            assert client.status("agent")["sha256"] == chat_before
+
+            invalid_episode_capture = expect_error(
+                client,
+                client.chat,
+                [{"role": "user", "content": "Say two words."}],
+                sidecar_id="agent",
+                sidecar_capture_episode=True,
+                max_tokens=2,
+                stream=False,
+            )
+            assert invalid_episode_capture["status"] == 400
             client.set_learning("agent", False)
+
+            # The fast sequence API tokenizes internally, captures one causal
+            # event per observed token, and commits writes transactionally.
+            client.create("sequence", learning_enabled=True)
+            sequence_before = client.status("sequence")["sha256"]
+            batch_observation = client.observe_sequence(
+                "sequence", "The room costs five gold pieces.", mode="batch"
+            )
+            assert batch_observation["learning_mode"] == "batch"
+            assert batch_observation["tokens_observed"] > 1
+            assert batch_observation["write_opportunities"] == batch_observation["tokens_observed"]
+            assert len(batch_observation["events"]) == batch_observation["tokens_observed"]
+            assert [event["token_position"] for event in batch_observation["events"]] == list(
+                range(batch_observation["tokens_observed"])
+            )
+            sequence_after_batch = client.status("sequence")["sha256"]
+            if batch_observation["writes_realized"]:
+                assert sequence_after_batch != sequence_before
+
+            chunked_observation = client.observe_sequence(
+                "sequence",
+                "The forge takes three hours.",
+                mode="chunked",
+                chunk_size=4,
+            )
+            assert chunked_observation["learning_mode"] == "chunked"
+            assert chunked_observation["chunk_size"] == 4
+            assert chunked_observation["chunks_processed"] >= 1
+            assert [event["token_position"] for event in chunked_observation["events"]] == list(
+                range(chunked_observation["tokens_observed"])
+            )
+
+            # The sequence endpoint must retain the historical forced-token
+            # transaction as the exact reference path.
+            exact_text = "The room costs five gold."
+            exact_token_count = len(client.tokenize(exact_text)["tokens"])
+            client.create("sequence-exact", learning_enabled=True)
+            exact_before = client.status("sequence-exact")["sha256"]
+            exact_observation = client.observe_sequence(
+                "sequence-exact", exact_text, mode="exact-token"
+            )
+            exact_events = exact_observation.get("sidecar_experience_events", [])
+            assert exact_observation["tokens_predicted"] == exact_token_count
+            assert len(exact_events) == exact_token_count
+            if any(event.get("updated") for event in exact_events):
+                assert client.status("sequence-exact")["sha256"] != exact_before
+            client.delete("sequence-exact")
+
+            client.set_learning("sequence", False)
+            disabled_sequence_before = client.status("sequence")["sha256"]
+            disabled_sequence = client.observe_sequence(
+                "sequence", "Learning is disabled here.", mode="batch"
+            )
+            assert disabled_sequence["updated"] is False
+            assert disabled_sequence["reason"] == "learning_disabled"
+            assert client.status("sequence")["sha256"] == disabled_sequence_before
+            client.delete("sequence")
 
             saved = client.save("agent", "saved")
             assert saved["sha256"] == written_sha
+            saved_by_id = client.save("agent")
+            assert saved_by_id["sha256"] == written_sha
             client.unload("agent")
             client.load("agent", "saved")
             assert client.status("agent")["sha256"] == written_sha
@@ -207,6 +278,7 @@ def run(model: Path, sidecar: Path, server_path: Path) -> dict:
             a_response = client.chat(
                 [{"role": "user", "content": "Say one word."}],
                 sidecar_id="sidecar-a",
+                sidecar_capture_episode=True,
                 max_tokens=1,
                 stream=False,
             )
@@ -250,6 +322,10 @@ def run(model: Path, sidecar: Path, server_path: Path) -> dict:
                 "legacy_vector": legacy_vector,
                 "multi_token_observe": multi_token_observe,
                 "multi_token_generation": multi_token_generation,
+                "batch_observation": batch_observation,
+                "chunked_observation": chunked_observation,
+                "exact_observation": exact_observation,
+                "disabled_sequence": disabled_sequence,
                 "disabled_observe": disabled_observe,
                 "invalid_observe": invalid_observe,
                 "unknown_status": unknown,

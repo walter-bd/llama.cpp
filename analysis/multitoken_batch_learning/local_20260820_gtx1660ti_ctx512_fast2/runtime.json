@@ -1,0 +1,18 @@
+{
+  "batch_size": 64,
+  "cuda": "12.0 (nvcc V12.0.140)",
+  "context_size": 512,
+  "gpu": "NVIDIA GeForce GTX 1660 Ti with Max-Q Design",
+  "gpu_vram_mib": 6144,
+  "llama_cpp_commit": "bd61fc41c414728bde7ee043d187c174a1defafb",
+  "model_path": "/home/walt/models/qwen35-q3-sparse/Qwen3.5-4B-UD-Q3_K_XL.gguf",
+  "model_sha256": "1874727e4bb6ac23fd0cd134ac6562d2759fe44f37fa68c55197b36526da4e37",
+  "nvidia_driver": "580.173.02",
+  "parallel": 1,
+  "residual_enabled": false,
+  "runtime_epoch": "local_20260820_gtx1660ti_ctx512_fast2",
+  "server_path": "build-fast2/bin/llama-server",
+  "server_sha256": "2b6d509787e1577e5093ed59e737ef43e5471754e91bb4f89a44641bf5bd8dcd",
+  "server_impl_sha256": "5facdd8d10144b6862638d440efdbd716424fc58d0bec07897dd033f23c7f5a9",
+  "temperature": 0.0
+}

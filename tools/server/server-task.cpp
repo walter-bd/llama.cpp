@@ -364,6 +364,9 @@ json server_task_result_cmpl_final::to_json_non_oaicompat() {
     if (!sidecar_episode_id.empty()) {
         res["sidecar_episode_id"] = sidecar_episode_id;
     }
+    if (!sidecar_experience_events.empty()) {
+        res["sidecar_experience_events"] = sidecar_experience_events;
+    }
     return response_fields.empty() ? res : json_get_nested_values(response_fields, res);
 }
 

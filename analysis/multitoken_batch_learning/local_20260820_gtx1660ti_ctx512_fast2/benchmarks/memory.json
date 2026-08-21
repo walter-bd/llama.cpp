@@ -1,0 +1,8 @@
+{
+  "measurement_status": "not_instrumented",
+  "peak_vram_mib": null,
+  "gpu_vram_mib": 6144,
+  "context_size": 512,
+  "batch_size": 64,
+  "note": "The runtime completed all modes without CUDA OOM. Peak process VRAM was not captured by the existing server telemetry and is not estimated."
+}

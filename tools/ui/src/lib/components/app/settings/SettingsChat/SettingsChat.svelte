@@ -10,6 +10,7 @@
 		SettingsChatToolsTab,
 		SettingsFooter
 	} from '$lib/components/app/settings';
+	import { PlasticSidecarPanel } from '$lib/components/app/sidecar';
 	import { Button } from '$lib/components/ui/button';
 	import {
 		NUMERIC_FIELDS,
@@ -142,6 +143,8 @@
 
 		<div class="mx-auto max-w-3xl flex-1">
 			<div class="space-y-6 p-4 md:p-6 md:pt-28">
+				<PlasticSidecarPanel />
+
 				<div class="grid">
 					<div class="mb-6 flex items-center gap-2 border-b border-border/30 pb-6 md:flex">
 						<currentSection.icon class="h-5 w-5" />

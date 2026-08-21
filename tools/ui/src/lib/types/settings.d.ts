@@ -89,6 +89,9 @@ export interface SettingsChatServiceOptions {
 	enableThinking?: boolean;
 	// Reasoning effort level (low/medium/high/max) for thinking models
 	reasoningEffort?: ReasoningEffort;
+	// Plastic sidecar is an explicit opt-in request extension.
+	sidecar_id?: string;
+	sidecar_debug_internal_plasticity?: boolean;
 	tools?: OpenAIToolDefinition[];
 	// Generation parameters
 	temperature?: number;

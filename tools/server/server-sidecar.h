@@ -20,6 +20,19 @@ struct server_sidecar_runtime_step {
     std::string source;
 };
 
+// One token-local learning event captured by the fast causal acquisition pass.
+// The key and clean baseline retain the validated one-token writer inputs; only
+// their model execution was batched.
+struct server_sidecar_captured_event {
+    int32_t token_position = -1;
+    int32_t chunk_index = -1;
+    llama_token observed_token = -1;
+    llama_token baseline_greedy = -1;
+    std::string observed_token_text;
+    std::string baseline_token_text;
+    std::vector<float> query;
+};
+
 // The manager owns portable sidecar state and retrieval/write lifecycle.  The
 // server owns token orchestration; retrieval deliberately returns a normalized
 // direction instead of installing a context-global cvec.
@@ -48,6 +61,7 @@ public:
 
     nlohmann::ordered_json status(const std::string & id) const;
     nlohmann::ordered_json create(const std::string & id, bool learning_enabled);
+    nlohmann::ordered_json clone(const std::string & source_id, const std::string & clone_id, bool learning_enabled);
     nlohmann::ordered_json load(const std::string & id, const std::string & path, bool learning_enabled);
     nlohmann::ordered_json save(const std::string & id, const std::string & path);
     nlohmann::ordered_json reset(const std::string & id);
@@ -62,7 +76,32 @@ public:
             const std::string & id,
             const std::string & episode_id,
             llama_token observed_token,
-            const std::string & observed_target);
+            const std::string & observed_target,
+            std::vector<float> * captured_direction = nullptr,
+            std::vector<float> * captured_query = nullptr);
+
+    // Apply already-captured token-local events in causal order. This keeps the
+    // Step-30 output-row writer and gate/counter schedule unchanged while the
+    // server amortizes model execution across a sequence.
+    nlohmann::ordered_json observe_captured_sequence(
+            const std::string & id,
+            const std::string & episode_id,
+            const std::string & learning_mode,
+            int32_t chunk_size,
+            const std::vector<server_sidecar_captured_event> & events,
+            bool capture_debug_vectors = false);
+
+    nlohmann::ordered_json observe_sham(
+            const std::string & id,
+            const std::string & episode_id,
+            llama_token observed_token,
+            const std::string & observed_target,
+            const std::vector<float> & write_direction,
+            double gate,
+            double effective_eta);
+
+    // Discard a request-scoped episode without changing writer counts.
+    bool discard_episode(const std::string & id, const std::string & episode_id);
 
     // Explicit research/debug path.  Normal clients must not manufacture the
     // model-width write direction.
@@ -125,6 +164,9 @@ public:
             int32_t n_completions,
             int32_t n_predict,
             bool speculative,
+            bool capture_episode,
+            bool internal_plasticity,
+            bool observed_sequence,
             std::string & error) const;
 
 private:

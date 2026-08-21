@@ -155,6 +155,8 @@ export class ChatService {
 			repeat_penalty,
 			// Other parameters
 			samplers,
+			sidecar_debug_internal_plasticity,
+			sidecar_id,
 			stream,
 			// Generation parameters
 			temperature,
@@ -331,6 +333,14 @@ export class ChatService {
 			} catch (error) {
 				console.warn('Failed to parse custom parameters:', error);
 			}
+		}
+
+		// Apply UI-selected sidecar options after custom JSON so a stale custom
+		// setting cannot silently override the active sidecar.
+		if (sidecar_id) requestBody.sidecar_id = sidecar_id;
+
+		if (sidecar_debug_internal_plasticity) {
+			requestBody.sidecar_debug_internal_plasticity = true;
 		}
 
 		try {

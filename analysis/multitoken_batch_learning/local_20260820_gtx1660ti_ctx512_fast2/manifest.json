@@ -1,0 +1,28 @@
+{
+  "files": {
+    "REPORT.md": "f1a2ba0bd983e6f7eab131ab5c49f20eb0bf88dc5bb0af1b948a62cf84cad636",
+    "architecture_before_after.md": "f57fd858d88a2ad1e2e4603905ae0debe3798e388a0d8c08d8d1578ce37fbfab",
+    "behavior/generation_samples.jsonl": "2364d80d5c39ce9abbfa2685b8899f424e260badd4af37be0fe3b6483d0c90d0",
+    "behavior/novel_results.jsonl": "7fc775c85165c6d8ea70563c4d78265ee8433275d4577935e281e217634d81a1",
+    "behavior/overwrite_results.jsonl": "6879a2bd53d9026374d6102146a70c6cb65f128674d5939060873f507baac001",
+    "benchmarks/memory.json": "06b21264fafda13a494c6009aa9f485108a9444be1aa9430d3b6e3727556492c",
+    "benchmarks/performance_by_mode.json": "c3c686a07e5be8f57040ac8e6b227cf6352635980746ec3a434eb2e0533e7f1d",
+    "benchmarks/throughput.json": "49a064d9e8d09168d062224d2b8bdc3b6e4de0707902ed2080afc56d68a94308",
+    "equivalence/baseline_token_agreement.jsonl": "4e396ba22670072291873cec00a50ecde9339ee2d6c543a078409060ca9fc070",
+    "equivalence/gate_comparison.jsonl": "baf888397c02b442d0c45d837165f36d342e3245102b606e10a45b8631a51163",
+    "equivalence/key_cosines.jsonl": "4eba2a2ef3574970ac8fab3ebdde9e956a4c204e09fcd750aa44e8e6736e9423",
+    "equivalence/sidecar_state_comparison.json": "d411b54fe8f66a13092eef1d16819975d476b33875904378086179dd1bfac44c",
+    "equivalence/writer_cosines.jsonl": "7c9f661a200ad712ad6243116b793965f2ce0030ba69ccf82246aa9b293c391f",
+    "implementation_notes.md": "0887c3a547a525ce04af7c8e2efaf4bee4a4938ca2bf6a5cd21b1674051088c0",
+    "preregistered_contract.md": "a8f202f86f889ca011d26ba1aea8a7e5e128ebdf16d1c1afb87536480e303b2d",
+    "runtime.json": "dacb35e32711d6acb2b50dd3703faf9ee860a11f06a358e590db7063034501bb",
+    "summary.json": "a08b53c9937e7d082de8522076d709314da17a9c8e7ecc736d3c3bd08ab7670e",
+    "trajectory/matching_vs_wrong_episode.json": "be1715c3eac4bfd05b23efc4d356f43389d47d4e3e850d54052ef91590c4efa1",
+    "trajectory/similarity_matrices.jsonl": "ad41a970dfe6c2dca32e677831d298bd12bd8aa4072861275e466f0d5eff89b1"
+  },
+  "hash_algorithm": "sha256",
+  "manifest_excludes": [
+    "manifest.json"
+  ],
+  "runtime_epoch": "local_20260820_gtx1660ti_ctx512_fast2"
+}

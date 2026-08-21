@@ -1,0 +1,6 @@
+{"content": " $100 per night. The", "label": "F", "tokens_predicted": 8}
+{"content": " $100 per night. The", "label": "EXACT", "tokens_predicted": 8}
+{"content": " $100 per night. The", "label": "CHUNK4", "tokens_predicted": 8}
+{"content": " $100 per night. The", "label": "CHUNK16", "tokens_predicted": 8}
+{"content": " $100 per night. The", "label": "CHUNK32", "tokens_predicted": 8}
+{"content": " $100 per night. The", "label": "BATCH", "tokens_predicted": 8}

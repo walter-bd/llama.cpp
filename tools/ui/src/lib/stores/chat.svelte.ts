@@ -38,6 +38,7 @@ import { mcpStore } from '$lib/stores/mcp.svelte';
 import { modelsStore } from '$lib/stores/models.svelte';
 import { serverStore } from '$lib/stores/server.svelte';
 import { settingsStore } from '$lib/stores/settings.svelte';
+import { sidecarStore } from '$lib/stores/sidecar.svelte';
 import { toolsStore } from '$lib/stores/tools.svelte';
 import type {
 	ApiChatMessageData,
@@ -2880,6 +2881,8 @@ class ChatStore {
 			apiOptions.backend_sampling = currentConfig.backend_sampling;
 
 		if (currentConfig.customJson) apiOptions.custom = currentConfig.customJson;
+
+		Object.assign(apiOptions, sidecarStore.chatRequestParams());
 
 		return apiOptions;
 	}
