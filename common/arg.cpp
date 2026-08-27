@@ -3598,6 +3598,46 @@ common_params_context common_params_parser_init(common_params & params, llama_ex
         }
     ).set_examples({LLAMA_EXAMPLE_SERVER}));
     add_opt(common_arg(
+        {"--sidecar-memory"}, "BACKEND",
+        "default sidecar memory backend for newly created sidecars: raw or prototype (default: raw)",
+        [](common_params & params, const std::string & value) {
+            if (value != "raw" && value != "prototype") {
+                throw std::invalid_argument("invalid sidecar memory backend: " + value);
+            }
+            params.sidecar_memory = value;
+        }
+    ).set_examples({LLAMA_EXAMPLE_SERVER}));
+    add_opt(common_arg(
+        {"--sidecar-prototypes"}, "N",
+        "prototype slot capacity for newly created prototype sidecars (default: 256)",
+        [](common_params & params, const std::string & value) {
+            params.sidecar_prototypes = std::stoi(value);
+            if (params.sidecar_prototypes < 1) {
+                throw std::invalid_argument("sidecar prototype capacity must be positive");
+            }
+        }
+    ).set_examples({LLAMA_EXAMPLE_SERVER}));
+    add_opt(common_arg(
+        {"--sidecar-merge-threshold"}, "VALUE",
+        "cosine threshold for merging into an active prototype below capacity (default: 0.90)",
+        [](common_params & params, const std::string & value) {
+            params.sidecar_merge_threshold = std::stod(value);
+            if (params.sidecar_merge_threshold < -1.0 || params.sidecar_merge_threshold > 1.0) {
+                throw std::invalid_argument("sidecar merge threshold must be in [-1, 1]");
+            }
+        }
+    ).set_examples({LLAMA_EXAMPLE_SERVER}));
+    add_opt(common_arg(
+        {"--sidecar-top-candidates"}, "N",
+        "number of prototype candidates passed to the existing sidecar reader (default: 10)",
+        [](common_params & params, const std::string & value) {
+            params.sidecar_top_cluster_candidates = std::stoi(value);
+            if (params.sidecar_top_cluster_candidates < 1) {
+                throw std::invalid_argument("sidecar candidate count must be positive");
+            }
+        }
+    ).set_examples({LLAMA_EXAMPLE_SERVER}));
+    add_opt(common_arg(
         {"--models-dir"}, "PATH",
         "directory containing models for the router server (default: disabled)",
         [](common_params & params, const std::string & value) {

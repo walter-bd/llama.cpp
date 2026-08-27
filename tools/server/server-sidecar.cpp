@@ -198,6 +198,61 @@ void write_bytes(const fs::path & path, const std::vector<uint8_t> & bytes) {
     }
 }
 
+// Prototype sidecars use fixed-width little-endian records so inactive slots
+// occupy the same serialized space as active slots.
+void append_u64(std::vector<uint8_t> & bytes, uint64_t value) {
+    for (size_t i = 0; i < sizeof(value); ++i) {
+        bytes.push_back(uint8_t(value >> (8 * i)));
+    }
+}
+
+uint64_t read_u64(const std::vector<uint8_t> & bytes, size_t & offset) {
+    if (offset + sizeof(uint64_t) > bytes.size()) {
+        throw std::runtime_error("truncated prototype metadata");
+    }
+    uint64_t value = 0;
+    for (size_t i = 0; i < sizeof(value); ++i) {
+        value |= uint64_t(bytes[offset++]) << (8 * i);
+    }
+    return value;
+}
+
+void append_double(std::vector<uint8_t> & bytes, double value) {
+    uint64_t bits = 0;
+    static_assert(sizeof(bits) == sizeof(value));
+    std::memcpy(&bits, &value, sizeof(bits));
+    append_u64(bytes, bits);
+}
+
+double read_double(const std::vector<uint8_t> & bytes, size_t & offset) {
+    const uint64_t bits = read_u64(bytes, offset);
+    double value = 0.0;
+    std::memcpy(&value, &bits, sizeof(value));
+    return value;
+}
+
+void append_float(std::vector<uint8_t> & bytes, float value) {
+    uint32_t bits = 0;
+    static_assert(sizeof(bits) == sizeof(value));
+    std::memcpy(&bits, &value, sizeof(bits));
+    for (size_t i = 0; i < sizeof(bits); ++i) {
+        bytes.push_back(uint8_t(bits >> (8 * i)));
+    }
+}
+
+float read_float(const std::vector<uint8_t> & bytes, size_t & offset) {
+    if (offset + sizeof(uint32_t) > bytes.size()) {
+        throw std::runtime_error("truncated prototype vector payload");
+    }
+    uint32_t bits = 0;
+    for (size_t i = 0; i < sizeof(bits); ++i) {
+        bits |= uint32_t(bytes[offset++]) << (8 * i);
+    }
+    float value = 0.0f;
+    std::memcpy(&value, &bits, sizeof(value));
+    return value;
+}
+
 double vector_norm(const std::vector<float> & values) {
     double sum = 0.0;
     for (float value : values) {
@@ -215,6 +270,48 @@ double dot_product(const std::vector<float> & left, const float * right, size_t 
         result += double(left[i]) * double(right[i]);
     }
     return result;
+}
+
+double cosine_similarity(const std::vector<float> & left, const std::vector<float> & right) {
+    if (left.size() != right.size()) {
+        throw std::runtime_error("prototype vector widths do not match");
+    }
+    const double left_norm = vector_norm(left);
+    const double right_norm = vector_norm(right);
+    if (left_norm <= EPSILON || right_norm <= EPSILON) {
+        return 0.0;
+    }
+    double dot = 0.0;
+    for (size_t i = 0; i < left.size(); ++i) {
+        dot += double(left[i]) * double(right[i]);
+    }
+    return dot / (left_norm * right_norm);
+}
+
+double cosine_similarity(const std::vector<float> & left, const float * right, size_t size) {
+    if (left.size() != size) {
+        throw std::runtime_error("prototype query width does not match centroid width");
+    }
+    const double left_norm = vector_norm(left);
+    double right_norm_squared = 0.0;
+    for (size_t i = 0; i < size; ++i) {
+        right_norm_squared += double(right[i]) * double(right[i]);
+    }
+    const double right_norm = std::sqrt(right_norm_squared);
+    if (left_norm <= EPSILON || right_norm <= EPSILON) {
+        return 0.0;
+    }
+    return dot_product(left, right, size) / (left_norm * right_norm);
+}
+
+void normalize_vector(std::vector<float> & values) {
+    const double norm = vector_norm(values);
+    if (norm <= EPSILON) {
+        return;
+    }
+    for (float & value : values) {
+        value = float(double(value) / norm);
+    }
 }
 
 std::string vector_checksum(const std::vector<float> & values) {
@@ -295,6 +392,26 @@ struct server_sidecar_manager::sidecar {
         std::vector<float> key;
     };
 
+    struct prototype {
+        bool active = false;
+        uint64_t count = 0;
+        double mean_coefficient = 0.0;
+        double key_dispersion = 0.0;
+        double q_coherence = 0.0;
+        uint64_t creation_step = 0;
+        uint64_t last_update_step = 0;
+        uint64_t forced_merge_count = 0;
+        std::vector<float> centroid_key;
+        std::vector<float> mean_q;
+    };
+
+    struct prototype_update {
+        size_t index = 0;
+        double similarity = 0.0;
+        bool created = false;
+        bool forced_merge = false;
+    };
+
     struct episode {
         std::vector<float> query;
         std::string source;
@@ -307,13 +424,24 @@ struct server_sidecar_manager::sidecar {
     int32_t width = 0;
     bool learning_enabled = false;
     bool loaded = true;
+    std::string memory_backend = "raw";
+    int32_t configured_prototypes = 0;
+    double merge_threshold = 0.90;
+    int32_t top_cluster_candidates = 10;
     std::vector<component> components;
+    // Prototype mode allocates every slot, including inactive slots, at
+    // creation/load time. This is the fixed physical memory boundary.
+    std::vector<prototype> prototypes;
     std::unordered_map<std::string, episode> episodes;
     std::unordered_map<std::string, step30_counts> writer_counts;
     uint64_t next_episode = 1;
     uint64_t version = 0;
     uint64_t retrievals = 0;
     uint64_t writes = 0;
+    uint64_t lifetime_merges = 0;
+    uint64_t forced_merges = 0;
+    uint64_t total_created_prototypes = 0;
+    uint64_t experiences_absorbed = 0;
     double sum_b = 0.0;
     double max_b = 0.0;
     std::string loaded_path;
@@ -324,6 +452,193 @@ struct server_sidecar_manager::sidecar {
     uint64_t query_captures = 0;
     server_sidecar_dispatch_telemetry dispatch_telemetry;
     sha256_context state_hash_context;
+    mutable bool prototype_hash_dirty = true;
+    mutable std::string prototype_hash_cache;
+
+    bool is_prototype_backend() const {
+        return memory_backend == "prototype";
+    }
+
+    void initialize_prototype_slots(int32_t count) {
+        if (count < 1) {
+            throw std::runtime_error("prototype capacity must be positive");
+        }
+        configured_prototypes = count;
+        prototypes.assign(size_t(count), prototype{});
+        for (prototype & slot : prototypes) {
+            slot.centroid_key.assign(size_t(width), 0.0f);
+            slot.mean_q.assign(size_t(width), 0.0f);
+        }
+        prototype_hash_dirty = true;
+        prototype_hash_cache.clear();
+    }
+
+    size_t active_prototype_count() const {
+        size_t active = 0;
+        for (const prototype & slot : prototypes) {
+            active += slot.active ? 1 : 0;
+        }
+        return active;
+    }
+
+    uintmax_t serialized_file_bytes() const {
+        if (loaded_path.empty()) {
+            return 0;
+        }
+        const fs::path package(loaded_path);
+        const std::array<const char *, 4> names = {
+            "manifest.json", "prototypes.f32", "prototypes.meta", "state.meta",
+        };
+        uintmax_t total = 0;
+        for (const char * name : names) {
+            std::error_code error;
+            const uintmax_t size = fs::file_size(package / name, error);
+            if (!error) {
+                total += size;
+            }
+        }
+        return total;
+    }
+
+    std::vector<uint8_t> prototype_vectors_payload() const {
+        std::vector<uint8_t> payload;
+        payload.reserve(prototypes.size() * size_t(width) * 2 * sizeof(float));
+        for (const prototype & slot : prototypes) {
+            for (float value : slot.centroid_key) {
+                append_float(payload, value);
+            }
+            for (float value : slot.mean_q) {
+                append_float(payload, value);
+            }
+        }
+        return payload;
+    }
+
+    std::vector<uint8_t> prototype_metadata_payload() const {
+        std::vector<uint8_t> payload;
+        payload.reserve(prototypes.size() * 64);
+        for (const prototype & slot : prototypes) {
+            payload.push_back(slot.active ? 1 : 0);
+            payload.insert(payload.end(), 7, 0);
+            append_u64(payload, slot.count);
+            append_double(payload, slot.mean_coefficient);
+            append_double(payload, slot.key_dispersion);
+            append_double(payload, slot.q_coherence);
+            append_u64(payload, slot.creation_step);
+            append_u64(payload, slot.last_update_step);
+            append_u64(payload, slot.forced_merge_count);
+        }
+        return payload;
+    }
+
+    std::vector<uint8_t> prototype_state_payload() const {
+        std::vector<uint8_t> payload;
+        payload.reserve(5 * sizeof(uint64_t));
+        append_u64(payload, writes);
+        append_u64(payload, lifetime_merges);
+        append_u64(payload, forced_merges);
+        append_u64(payload, total_created_prototypes);
+        append_u64(payload, experiences_absorbed);
+        return payload;
+    }
+
+    void mark_prototype_dirty() {
+        prototype_hash_dirty = true;
+        prototype_hash_cache.clear();
+    }
+
+    prototype_update absorb_prototype(
+            const std::vector<float> & incoming_key,
+            const std::vector<float> & incoming_q,
+            double coefficient) {
+        if (!is_prototype_backend()) {
+            throw std::runtime_error("prototype update requested for raw sidecar");
+        }
+        if (incoming_key.size() != size_t(width) || incoming_q.size() != size_t(width)) {
+            throw std::runtime_error("prototype update width mismatch");
+        }
+        std::vector<float> key = incoming_key;
+        normalize_vector(key);
+        if (vector_norm(key) <= EPSILON) {
+            throw std::runtime_error("prototype key has zero norm");
+        }
+
+        size_t best_index = prototypes.size();
+        double best_similarity = -std::numeric_limits<double>::infinity();
+        for (size_t index = 0; index < prototypes.size(); ++index) {
+            const prototype & slot = prototypes[index];
+            if (!slot.active) {
+                continue;
+            }
+            const double similarity = cosine_similarity(slot.centroid_key, key);
+            if (similarity > best_similarity ||
+                    (close_enough(similarity, best_similarity) && index < best_index)) {
+                best_index = index;
+                best_similarity = similarity;
+            }
+        }
+
+        size_t inactive_index = prototypes.size();
+        for (size_t index = 0; index < prototypes.size(); ++index) {
+            if (!prototypes[index].active) {
+                inactive_index = index;
+                break;
+            }
+        }
+
+        const bool create = inactive_index < prototypes.size() &&
+            (best_index == prototypes.size() || best_similarity < merge_threshold);
+        if (create) {
+            prototype & slot = prototypes[inactive_index];
+            slot.active = true;
+            slot.count = 1;
+            slot.mean_coefficient = coefficient;
+            slot.key_dispersion = 0.0;
+            slot.q_coherence = 1.0;
+            slot.creation_step = experiences_absorbed + 1;
+            slot.last_update_step = experiences_absorbed + 1;
+            slot.forced_merge_count = 0;
+            slot.centroid_key = key;
+            slot.mean_q = incoming_q;
+            ++total_created_prototypes;
+            ++experiences_absorbed;
+            mark_prototype_dirty();
+            return prototype_update{inactive_index, 0.0, true, false};
+        }
+
+        if (best_index == prototypes.size()) {
+            throw std::runtime_error("prototype bank has no usable slot");
+        }
+        prototype & slot = prototypes[best_index];
+        const uint64_t previous_count = slot.count;
+        const double denominator = double(previous_count + 1);
+        const double q_similarity = cosine_similarity(slot.mean_q, incoming_q);
+        for (size_t i = 0; i < size_t(width); ++i) {
+            slot.centroid_key[i] = float(
+                double(slot.centroid_key[i]) +
+                (double(key[i]) - double(slot.centroid_key[i])) / denominator);
+            slot.mean_q[i] = float(
+                double(slot.mean_q[i]) +
+                (double(incoming_q[i]) - double(slot.mean_q[i])) / denominator);
+        }
+        normalize_vector(slot.centroid_key);
+        slot.mean_coefficient += (coefficient - slot.mean_coefficient) / denominator;
+        slot.key_dispersion += ((1.0 - best_similarity) - slot.key_dispersion) / denominator;
+        slot.q_coherence += (q_similarity - slot.q_coherence) / denominator;
+        slot.count = previous_count + 1;
+        slot.last_update_step = experiences_absorbed + 1;
+        ++lifetime_merges;
+        ++experiences_absorbed;
+
+        const bool forced = active_prototype_count() == prototypes.size() &&
+            best_similarity < merge_threshold;
+        if (forced) {
+            ++slot.forced_merge_count;
+            ++forced_merges;
+        }
+        mark_prototype_dirty();
+        return prototype_update{best_index, best_similarity, false, forced};
+    }
 
     void append_component(component value) {
         const std::string metadata = value.source + "\n" + value.destination + "\n" +
@@ -354,6 +669,47 @@ struct server_sidecar_manager::sidecar {
             double & budget,
             std::string & source) const {
         std::vector<float> response(width, 0.0f);
+        if (is_prototype_backend()) {
+            std::vector<std::pair<double, size_t>> candidates;
+            candidates.reserve(active_prototype_count());
+            for (size_t index = 0; index < prototypes.size(); ++index) {
+                const prototype & slot = prototypes[index];
+                if (slot.active) {
+                    candidates.emplace_back(
+                        cosine_similarity(slot.centroid_key, query, size_t(width)), index);
+                }
+            }
+            std::sort(candidates.begin(), candidates.end(), [](const auto & left, const auto & right) {
+                if (!close_enough(left.first, right.first)) {
+                    return left.first > right.first;
+                }
+                return left.second < right.second;
+            });
+            const size_t limit = std::min(
+                candidates.size(), size_t(std::max(1, top_cluster_candidates)));
+            double selected_activation = 0.0;
+            double selected_abs_activation = -1.0;
+            for (size_t rank = 0; rank < limit; ++rank) {
+                const double activation = candidates[rank].first;
+                const prototype & slot = prototypes[candidates[rank].second];
+                if (std::abs(activation) > selected_abs_activation) {
+                    selected_abs_activation = std::abs(activation);
+                    selected_activation = activation;
+                    source = "prototype:" + std::to_string(candidates[rank].second);
+                }
+                for (int32_t i = 0; i < width; ++i) {
+                    response[size_t(i)] += float(
+                        slot.mean_coefficient * activation * double(slot.mean_q[size_t(i)]));
+                }
+            }
+            raw_norm = vector_norm(response);
+            budget = server_sidecar_authority_controller::budget(raw_norm);
+            if (selected_abs_activation < 0.0) {
+                source.clear();
+            }
+            (void) selected_activation;
+            return response;
+        }
         double selected_activation = 0.0;
         double selected_abs_activation = -1.0;
         for (const component & component : components) {
@@ -376,7 +732,79 @@ struct server_sidecar_manager::sidecar {
         return response;
     }
 
+    // Research-only single-candidate read.  The normal reader first computes
+    // the aggregate Top-K norm and authority.  The selected prototype is then
+    // rescaled to that same effective read magnitude, matching the causal
+    // utility probe's single-candidate intervention while leaving the stored
+    // key/value state unchanged.
+    std::vector<float> retrieve_forced(
+            const float * query,
+            size_t prototype_index,
+            double target_raw_norm,
+            double & raw_norm,
+            double & budget,
+            std::string & source,
+            std::string & error) const {
+        if (!is_prototype_backend()) {
+            error = "forced prototype selection requires the prototype backend";
+            return {};
+        }
+        if (prototype_index >= prototypes.size() || !prototypes[prototype_index].active) {
+            error = "forced prototype_id is not an active prototype";
+            return {};
+        }
+
+        const prototype & slot = prototypes[prototype_index];
+        const double activation = cosine_similarity(
+            slot.centroid_key, query, size_t(width));
+        const double q_norm = vector_norm(slot.mean_q);
+        std::vector<float> response(width, 0.0f);
+        if (target_raw_norm <= EPSILON) {
+            error = "forced prototype read has zero normal target magnitude";
+            return {};
+        }
+        if (std::abs(activation) <= EPSILON) {
+            error = "forced prototype read has zero query activation";
+            return {};
+        }
+        if (q_norm <= EPSILON) {
+            error = "forced prototype read has zero correction norm";
+            return {};
+        }
+        const double sign = slot.mean_coefficient * activation < 0.0 ? -1.0 : 1.0;
+        const double coefficient = sign * target_raw_norm / (activation * q_norm);
+        for (int32_t i = 0; i < width; ++i) {
+            response[size_t(i)] = float(
+                coefficient * activation * double(slot.mean_q[size_t(i)]));
+        }
+        raw_norm = vector_norm(response);
+        budget = server_sidecar_authority_controller::budget(raw_norm);
+        source = "prototype:" + std::to_string(prototype_index);
+        return response;
+    }
+
     std::string state_hash() const {
+        if (is_prototype_backend()) {
+            if (!prototype_hash_dirty && !prototype_hash_cache.empty()) {
+                return prototype_hash_cache;
+            }
+            sha256_context context;
+            const std::string config = "sidecar_prototype_v1\n" +
+                std::to_string(width) + "\n" +
+                std::to_string(configured_prototypes) + "\n" +
+                std::to_string(merge_threshold) + "\n" +
+                std::to_string(top_cluster_candidates) + "\n";
+            sha256_update(context, reinterpret_cast<const uint8_t *>(config.data()), config.size());
+            const auto vectors = prototype_vectors_payload();
+            const auto metadata = prototype_metadata_payload();
+            const auto state = prototype_state_payload();
+            sha256_update(context, vectors.data(), vectors.size());
+            sha256_update(context, metadata.data(), metadata.size());
+            sha256_update(context, state.data(), state.size());
+            prototype_hash_cache = sha256_finish(context);
+            prototype_hash_dirty = false;
+            return prototype_hash_cache;
+        }
         sha256_context snapshot = state_hash_context;
         return sha256_finish(snapshot);
     }
@@ -518,12 +946,25 @@ json server_sidecar_manager::status(const std::string & id) const {
             result["sidecars"].push_back(json{
                 {"id", state.id},
                 {"loaded", state.loaded},
-                {"format_version", 1},
+                {"format_version", state.is_prototype_backend() ? 2 : 1},
+                {"memory_backend", state.memory_backend},
                 {"learning_enabled", state.learning_enabled},
                 {"sha256", state.state_hash()},
                 {"components", state.components.size()},
+                {"configured_prototypes", state.configured_prototypes},
+                {"allocated_prototypes", state.prototypes.size()},
+                {"active_prototypes", state.active_prototype_count()},
+                {"prototype_count", state.active_prototype_count()},
+                {"lifetime_writes", state.writes},
+                {"lifetime_merges", state.lifetime_merges},
+                {"forced_merges", state.forced_merges},
+                {"total_created_prototypes", state.total_created_prototypes},
+                {"experiences_absorbed", state.experiences_absorbed},
+                {"merge_threshold", state.merge_threshold},
+                {"top_cluster_candidates", state.top_cluster_candidates},
                 {"width", state.width},
-                {"bytes", state.components.size() * size_t(state.width) * sizeof(float) * 2},
+                {"bytes", state.is_prototype_backend() ? state.serialized_file_bytes() :
+                    state.components.size() * size_t(state.width) * sizeof(float) * 2},
                 {"writes", state.writes},
                 {"retrievals", state.retrievals},
                 {"mean_B", state.retrievals == 0 ? 0.0 : state.sum_b / double(state.retrievals)},
@@ -553,12 +994,25 @@ json server_sidecar_manager::status(const std::string & id) const {
         {"enabled", !root.empty()},
         {"id", state->id},
         {"loaded", state->loaded},
-        {"format_version", 1},
+        {"format_version", state->is_prototype_backend() ? 2 : 1},
+        {"memory_backend", state->memory_backend},
         {"learning_enabled", state->learning_enabled},
         {"sha256", state->state_hash()},
         {"components", state->components.size()},
+        {"configured_prototypes", state->configured_prototypes},
+        {"allocated_prototypes", state->prototypes.size()},
+        {"active_prototypes", state->active_prototype_count()},
+        {"prototype_count", state->active_prototype_count()},
+        {"lifetime_writes", state->writes},
+        {"lifetime_merges", state->lifetime_merges},
+        {"forced_merges", state->forced_merges},
+        {"total_created_prototypes", state->total_created_prototypes},
+        {"experiences_absorbed", state->experiences_absorbed},
+        {"merge_threshold", state->merge_threshold},
+        {"top_cluster_candidates", state->top_cluster_candidates},
         {"width", state->width},
-        {"bytes", state->components.size() * size_t(state->width) * sizeof(float) * 2},
+        {"bytes", state->is_prototype_backend() ? state->serialized_file_bytes() :
+            state->components.size() * size_t(state->width) * sizeof(float) * 2},
         {"writes", state->writes},
         {"retrievals", state->retrievals},
         {"mean_B", state->retrievals == 0 ? 0.0 : state->sum_b / double(state->retrievals)},
@@ -580,7 +1034,13 @@ json server_sidecar_manager::status(const std::string & id) const {
     };
 }
 
-json server_sidecar_manager::create(const std::string & id, bool learning_enabled) {
+json server_sidecar_manager::create(
+        const std::string & id,
+        bool learning_enabled,
+        const std::string & memory_backend,
+        int32_t configured_prototypes,
+        double merge_threshold,
+        int32_t top_cluster_candidates) {
     if (!valid_id(id)) {
         throw std::runtime_error("invalid sidecar_id");
     }
@@ -598,13 +1058,40 @@ json server_sidecar_manager::create(const std::string & id, bool learning_enable
     if (sidecars.find(id) != sidecars.end()) {
         throw std::runtime_error("sidecar_id already exists: " + id);
     }
+    if (memory_backend != "raw" && memory_backend != "prototype") {
+        throw std::runtime_error("invalid sidecar memory backend: " + memory_backend);
+    }
+    if (configured_prototypes < 1) {
+        throw std::runtime_error("prototype capacity must be positive");
+    }
+    if (!std::isfinite(merge_threshold) || merge_threshold < -1.0 || merge_threshold > 1.0) {
+        throw std::runtime_error("prototype merge threshold must be in [-1, 1]");
+    }
+    if (top_cluster_candidates < 1) {
+        throw std::runtime_error("prototype candidate count must be positive");
+    }
     auto state = std::make_shared<sidecar>();
     state->id = id;
     state->width = model_width;
     state->learning_enabled = learning_enabled;
+    state->memory_backend = memory_backend;
+    state->merge_threshold = merge_threshold;
+    state->top_cluster_candidates = top_cluster_candidates;
     state->injection_profile_id = injection_profile->id;
+    if (memory_backend == "prototype") {
+        state->initialize_prototype_slots(configured_prototypes);
+    }
     sidecars.emplace(id, state);
-    return json{{"id", id}, {"loaded", true}, {"learning_enabled", learning_enabled}, {"components", 0}, {"width", model_width}};
+    return json{
+        {"id", id},
+        {"loaded", true},
+        {"learning_enabled", learning_enabled},
+        {"memory_backend", memory_backend},
+        {"configured_prototypes", memory_backend == "prototype" ? configured_prototypes : 0},
+        {"active_prototypes", 0},
+        {"components", 0},
+        {"width", model_width},
+    };
 }
 
 json server_sidecar_manager::clone(const std::string & source_id, const std::string & clone_id, bool learning_enabled) {
@@ -638,9 +1125,22 @@ json server_sidecar_manager::clone(const std::string & source_id, const std::str
     state->base_model_identifier = source->base_model_identifier;
     state->base_model_sha256 = source->base_model_sha256;
     state->injection_profile_id = source->injection_profile_id;
+    state->memory_backend = source->memory_backend;
+    state->configured_prototypes = source->configured_prototypes;
+    state->merge_threshold = source->merge_threshold;
+    state->top_cluster_candidates = source->top_cluster_candidates;
+    state->lifetime_merges = source->lifetime_merges;
+    state->forced_merges = source->forced_merges;
+    state->total_created_prototypes = source->total_created_prototypes;
+    state->experiences_absorbed = source->experiences_absorbed;
     state->components.reserve(source->components.size());
     for (const auto & component : source->components) {
         state->append_component(component);
+    }
+    if (source->is_prototype_backend()) {
+        state->initialize_prototype_slots(source->configured_prototypes);
+        state->prototypes = source->prototypes;
+        state->prototype_hash_dirty = true;
     }
     sidecars.emplace(clone_id, state);
 
@@ -649,6 +1149,9 @@ json server_sidecar_manager::clone(const std::string & source_id, const std::str
         {"source_id", source_id},
         {"loaded", state->loaded},
         {"learning_enabled", state->learning_enabled},
+        {"memory_backend", state->memory_backend},
+        {"configured_prototypes", state->configured_prototypes},
+        {"active_prototypes", state->active_prototype_count()},
         {"components", state->components.size()},
         {"width", state->width},
         {"sha256", state->state_hash()},
@@ -668,13 +1171,142 @@ json server_sidecar_manager::load(const std::string & id, const std::string & pa
     }
     const fs::path package = package_path(path, false);
     const fs::path manifest_path = package / "manifest.json";
+    const auto manifest_bytes = read_bytes(manifest_path);
+    const json manifest = json::parse(std::string(manifest_bytes.begin(), manifest_bytes.end()));
+
+    if (manifest.value("magic", std::string()) == "sidecar_prototype_v1") {
+        require_json_file(manifest, "backend", "prototype");
+        if (required_json<int>(manifest, "version") != 1 ||
+                required_json<std::string>(manifest, "dtype") != "float32") {
+            throw std::runtime_error("unsupported prototype sidecar version or dtype");
+        }
+        if (!manifest.contains("shape") || !manifest["shape"].is_object()) {
+            throw std::runtime_error("prototype sidecar manifest has no shape");
+        }
+        const int32_t width = required_json<int32_t>(manifest["shape"], "width");
+        const int32_t configured_prototypes = required_json<int32_t>(
+            manifest["shape"], "prototype_count");
+        if (width <= 0 || configured_prototypes < 1 ||
+                required_json<int32_t>(manifest, "configured_prototypes") != configured_prototypes) {
+            throw std::runtime_error("prototype sidecar manifest shape is inconsistent");
+        }
+        if (model_width > 0 && width != model_width) {
+            throw std::runtime_error("prototype sidecar width does not match loaded model width");
+        }
+        const double merge_threshold = required_json<double>(manifest, "merge_threshold");
+        const int32_t top_cluster_candidates = required_json<int32_t>(
+            manifest, "top_cluster_candidates");
+        if (!std::isfinite(merge_threshold) || merge_threshold < -1.0 || merge_threshold > 1.0 ||
+                top_cluster_candidates < 1) {
+            throw std::runtime_error("invalid prototype sidecar configuration");
+        }
+
+        const fs::path vectors_path = package / "prototypes.f32";
+        const fs::path metadata_path = package / "prototypes.meta";
+        const fs::path state_path = package / "state.meta";
+        const auto vectors_bytes = read_bytes(vectors_path);
+        const auto metadata_bytes = read_bytes(metadata_path);
+        const auto state_bytes = read_bytes(state_path);
+        const size_t expected_vectors = size_t(configured_prototypes) * size_t(width) * 2 * sizeof(float);
+        const size_t expected_metadata = size_t(configured_prototypes) * 64;
+        if (vectors_bytes.size() != expected_vectors || metadata_bytes.size() != expected_metadata ||
+                state_bytes.size() != 5 * sizeof(uint64_t)) {
+            throw std::runtime_error("prototype sidecar fixed payload size mismatch");
+        }
+        if (sha256_bytes(vectors_bytes) != required_json<std::string>(manifest, "payload_sha256") ||
+                sha256_bytes(metadata_bytes) != required_json<std::string>(manifest, "metadata_sha256") ||
+                sha256_bytes(state_bytes) != required_json<std::string>(manifest, "state_sha256")) {
+            throw std::runtime_error("prototype sidecar checksum mismatch");
+        }
+
+        auto state = std::make_shared<sidecar>();
+        state->id = id;
+        state->width = width;
+        state->learning_enabled = learning_enabled;
+        state->memory_backend = "prototype";
+        state->merge_threshold = merge_threshold;
+        state->top_cluster_candidates = top_cluster_candidates;
+        state->injection_profile_id = injection_profile->id;
+        state->loaded_path = package.string();
+        state->package_sha = sha256_bytes(manifest_bytes) + sha256_bytes(metadata_bytes) +
+            sha256_bytes(state_bytes) + sha256_bytes(vectors_bytes);
+        if (manifest.contains("base_model") && manifest["base_model"].is_object()) {
+            state->base_model_identifier = manifest["base_model"].value("identifier", "unavailable");
+            state->base_model_sha256 = manifest["base_model"].value("sha256", "");
+        }
+        state->initialize_prototype_slots(configured_prototypes);
+
+        size_t vector_offset = 0;
+        for (sidecar::prototype & slot : state->prototypes) {
+            for (float & value : slot.centroid_key) {
+                value = read_float(vectors_bytes, vector_offset);
+            }
+            for (float & value : slot.mean_q) {
+                value = read_float(vectors_bytes, vector_offset);
+            }
+        }
+        if (vector_offset != vectors_bytes.size()) {
+            throw std::runtime_error("prototype vector payload has trailing bytes");
+        }
+
+        size_t metadata_offset = 0;
+        for (sidecar::prototype & slot : state->prototypes) {
+            if (metadata_offset + 8 > metadata_bytes.size()) {
+                throw std::runtime_error("truncated prototype slot metadata");
+            }
+            slot.active = metadata_bytes[metadata_offset++] != 0;
+            metadata_offset += 7;
+            slot.count = read_u64(metadata_bytes, metadata_offset);
+            slot.mean_coefficient = read_double(metadata_bytes, metadata_offset);
+            slot.key_dispersion = read_double(metadata_bytes, metadata_offset);
+            slot.q_coherence = read_double(metadata_bytes, metadata_offset);
+            slot.creation_step = read_u64(metadata_bytes, metadata_offset);
+            slot.last_update_step = read_u64(metadata_bytes, metadata_offset);
+            slot.forced_merge_count = read_u64(metadata_bytes, metadata_offset);
+            if (!slot.active && slot.count != 0) {
+                throw std::runtime_error("inactive prototype slot has a nonzero count");
+            }
+        }
+        if (metadata_offset != metadata_bytes.size()) {
+            throw std::runtime_error("prototype metadata has trailing bytes");
+        }
+
+        size_t state_offset = 0;
+        state->writes = read_u64(state_bytes, state_offset);
+        state->lifetime_merges = read_u64(state_bytes, state_offset);
+        state->forced_merges = read_u64(state_bytes, state_offset);
+        state->total_created_prototypes = read_u64(state_bytes, state_offset);
+        state->experiences_absorbed = read_u64(state_bytes, state_offset);
+        if (state_offset != state_bytes.size()) {
+            throw std::runtime_error("prototype state metadata has trailing bytes");
+        }
+        state->prototype_hash_dirty = true;
+
+        std::lock_guard<std::mutex> lock(mutex);
+        if (sidecars.find(id) != sidecars.end()) {
+            throw std::runtime_error("sidecar_id already exists: " + id);
+        }
+        sidecars[id] = std::move(state);
+        const auto loaded = sidecars.at(id);
+        std::lock_guard<std::mutex> state_lock(loaded->mutex);
+        return json{
+            {"id", id},
+            {"loaded", true},
+            {"learning_enabled", learning_enabled},
+            {"memory_backend", "prototype"},
+            {"configured_prototypes", loaded->configured_prototypes},
+            {"active_prototypes", loaded->active_prototype_count()},
+            {"components", 0},
+            {"width", loaded->width},
+            {"sha256", loaded->state_hash()},
+        };
+    }
+
     const fs::path components_path = package / "components.jsonl";
     const fs::path vectors_path = package / "vectors.f32";
 
-    const auto manifest_bytes = read_bytes(manifest_path);
     const auto components_bytes = read_bytes(components_path);
     const auto vectors_bytes = read_bytes(vectors_path);
-    const json manifest = json::parse(std::string(manifest_bytes.begin(), manifest_bytes.end()));
     require_json_file(manifest, "magic", "sidecar_v1");
     if (required_json<int>(manifest, "version") != 1 || required_json<std::string>(manifest, "dtype") != "float32") {
         throw std::runtime_error("unsupported sidecar_v1 version or dtype");
@@ -799,6 +1431,63 @@ json server_sidecar_manager::save(const std::string & id, const std::string & pa
         throw std::runtime_error("cannot create sidecar package: " + error.message());
     }
 
+    if (state->is_prototype_backend()) {
+        const auto vectors = state->prototype_vectors_payload();
+        const auto metadata = state->prototype_metadata_payload();
+        const auto state_metadata = state->prototype_state_payload();
+        json manifest = {
+            {"magic", "sidecar_prototype_v1"},
+            {"version", 1},
+            {"backend", "prototype"},
+            {"dtype", "float32"},
+            {"shape", {{"prototype_count", state->configured_prototypes}, {"width", state->width}}},
+            {"configured_prototypes", state->configured_prototypes},
+            {"merge_threshold", state->merge_threshold},
+            {"top_cluster_candidates", state->top_cluster_candidates},
+            {"payload_sha256", sha256_bytes(vectors)},
+            {"metadata_sha256", sha256_bytes(metadata)},
+            {"state_sha256", sha256_bytes(state_metadata)},
+            {"base_model", {{"identifier", state->base_model_identifier}}},
+            {"reader", {
+                {"b_max", server_sidecar_authority_controller::max_budget()},
+                {"s_ref", server_sidecar_authority_controller::reference_norm()},
+                {"topology", {
+                    {"block24", server_sidecar_validated_topology::block24_scale()},
+                    {"block28", server_sidecar_validated_topology::block28_scale()},
+                    {"final", server_sidecar_validated_topology::final_scale()},
+                }},
+                {"implementation", "step29_recursive_c2"},
+                {"version", 1},
+            }},
+        };
+        const std::string manifest_text = manifest.dump(2) + "\n";
+        write_bytes(package / "prototypes.f32", vectors);
+        write_bytes(package / "prototypes.meta", metadata);
+        write_bytes(package / "state.meta", state_metadata);
+        write_bytes(package / "manifest.json", std::vector<uint8_t>(manifest_text.begin(), manifest_text.end()));
+        std::error_code remove_error;
+        fs::remove(package / "components.jsonl", remove_error);
+        remove_error.clear();
+        fs::remove(package / "vectors.f32", remove_error);
+        state->loaded_path = package.string();
+        state->package_sha = sha256_string(manifest_text) + sha256_bytes(metadata) +
+            sha256_bytes(state_metadata) + sha256_bytes(vectors);
+        const uintmax_t file_bytes = fs::file_size(package / "manifest.json") +
+            fs::file_size(package / "prototypes.f32") + fs::file_size(package / "prototypes.meta") +
+            fs::file_size(package / "state.meta");
+        return json{
+            {"id", state->id},
+            {"path", package.string()},
+            {"sha256", state->state_hash()},
+            {"size", file_bytes},
+            {"file_bytes", file_bytes},
+            {"memory_backend", "prototype"},
+            {"configured_prototypes", state->configured_prototypes},
+            {"active_prototypes", state->active_prototype_count()},
+            {"components", 0},
+        };
+    }
+
     std::vector<uint8_t> vectors;
     vectors.reserve(state->components.size() * size_t(state->width) * 2 * sizeof(float));
     std::string components_text;
@@ -848,6 +1537,12 @@ json server_sidecar_manager::save(const std::string & id, const std::string & pa
     write_bytes(package / "vectors.f32", vectors);
     write_bytes(package / "components.jsonl", std::vector<uint8_t>(components_text.begin(), components_text.end()));
     write_bytes(package / "manifest.json", std::vector<uint8_t>(manifest_text.begin(), manifest_text.end()));
+    std::error_code remove_error;
+    fs::remove(package / "prototypes.f32", remove_error);
+    remove_error.clear();
+    fs::remove(package / "prototypes.meta", remove_error);
+    remove_error.clear();
+    fs::remove(package / "state.meta", remove_error);
     state->loaded_path = package.string();
     state->package_sha = sha256_string(manifest_text) + components_sha + payload_sha;
     return json{
@@ -863,7 +1558,20 @@ json server_sidecar_manager::reset(const std::string & id) {
     std::lock_guard<std::mutex> lock(mutex);
     const auto state = get(id);
     std::lock_guard<std::mutex> state_lock(state->mutex);
-    state->clear_components();
+    if (state->is_prototype_backend()) {
+        for (sidecar::prototype & slot : state->prototypes) {
+            slot = sidecar::prototype{};
+            slot.centroid_key.assign(size_t(state->width), 0.0f);
+            slot.mean_q.assign(size_t(state->width), 0.0f);
+        }
+        state->lifetime_merges = 0;
+        state->forced_merges = 0;
+        state->total_created_prototypes = 0;
+        state->experiences_absorbed = 0;
+        state->mark_prototype_dirty();
+    } else {
+        state->clear_components();
+    }
     state->episodes.clear();
     state->writer_counts.clear();
     state->retrievals = 0;
@@ -914,6 +1622,13 @@ json server_sidecar_manager::observe(
     const auto state = get(id);
     std::lock_guard<std::mutex> state_lock(state->mutex);
     if (!state->learning_enabled) {
+        const auto episode_it = state->episodes.find(episode_id);
+        if (captured_query != nullptr && episode_it != state->episodes.end()) {
+            *captured_query = episode_it->second.query;
+        }
+        if (episode_it != state->episodes.end()) {
+            state->episodes.erase(episode_it);
+        }
         return json{{"id", id}, {"episode_id", episode_id}, {"updated", false}, {"reason", "learning_disabled"}};
     }
     auto episode_it = state->episodes.find(episode_id);
@@ -998,8 +1713,14 @@ json server_sidecar_manager::observe(
     const double update_norm = component.coefficient * vector_norm(component.key);
     const double coefficient = component.coefficient;
     const bool updated = coefficient > 0.0;
+    sidecar::prototype_update prototype_result;
     if (updated) {
-        state->append_component(std::move(component));
+        if (state->is_prototype_backend()) {
+            prototype_result = state->absorb_prototype(
+                component.key, component.value, component.coefficient);
+        } else {
+            state->append_component(std::move(component));
+        }
         ++state->writes;
     }
     const std::string after = state->state_hash();
@@ -1019,7 +1740,14 @@ json server_sidecar_manager::observe(
         {"update_norm", update_norm},
         {"sha256_before", before},
         {"sha256_after", after},
+        {"memory_backend", state->memory_backend},
         {"components", state->components.size()},
+        {"allocated_prototypes", state->prototypes.size()},
+        {"active_prototypes", state->active_prototype_count()},
+        {"prototype_index", updated && state->is_prototype_backend() ?
+            static_cast<int64_t>(prototype_result.index) : -1},
+        {"prototype_created", updated && state->is_prototype_backend() && prototype_result.created},
+        {"forced_merge", updated && state->is_prototype_backend() && prototype_result.forced_merge},
         {"count_total", counts.total},
         {"count_matching", counts.matching},
     };
@@ -1043,6 +1771,18 @@ json server_sidecar_manager::observe_captured_sequence(
     const std::string state_before = state->state_hash();
     const size_t components_before = state->components.size();
     const uint64_t writes_before = state->writes;
+    const uint64_t lifetime_merges_before = state->lifetime_merges;
+    const uint64_t forced_merges_before = state->forced_merges;
+    const uint64_t created_prototypes_before = state->total_created_prototypes;
+    const uint64_t experiences_absorbed_before = state->experiences_absorbed;
+    std::vector<server_sidecar_manager::sidecar::prototype> prototypes_before;
+    bool prototype_hash_dirty_before = true;
+    std::string prototype_hash_cache_before;
+    if (state->is_prototype_backend()) {
+        prototypes_before = state->prototypes;
+        prototype_hash_dirty_before = state->prototype_hash_dirty;
+        prototype_hash_cache_before = state->prototype_hash_cache;
+    }
     if (!state->learning_enabled) {
         return json{
             {"id", id},
@@ -1079,6 +1819,7 @@ json server_sidecar_manager::observe_captured_sequence(
     double update_norm_sum = 0.0;
     int32_t previous_position = -1;
     int32_t previous_chunk = -1;
+    const bool per_event_hash = !state->is_prototype_backend();
 
     try {
         for (const auto & event : events) {
@@ -1126,7 +1867,8 @@ json server_sidecar_manager::observe_captured_sequence(
             const step30_counts counts_before = counts_it == state->writer_counts.end() ?
                 step30_counts{} : counts_it->second;
             const step30_gate gate = compute_step30_gate(counts_before);
-            const std::string event_hash_before = state->state_hash();
+            const std::string event_hash_before = per_event_hash ?
+                state->state_hash() : "deferred_prototype_hash";
 
             auto & counts = state->writer_counts[source];
             ++counts.total;
@@ -1140,6 +1882,7 @@ json server_sidecar_manager::observe_captured_sequence(
             double coefficient = 0.0;
             double update_norm = 0.0;
             std::vector<float> normalized_direction;
+            sidecar::prototype_update prototype_result;
             if (std::isfinite(direction_norm) && direction_norm > EPSILON) {
                 sidecar::component component;
                 component.coefficient = ETA * gate.gate;
@@ -1158,7 +1901,12 @@ json server_sidecar_manager::observe_captured_sequence(
                 update_norm = coefficient * vector_norm(component.key);
                 updated = coefficient > 0.0;
                 if (updated) {
-                    state->append_component(std::move(component));
+                    if (state->is_prototype_backend()) {
+                        prototype_result = state->absorb_prototype(
+                            component.key, component.value, component.coefficient);
+                    } else {
+                        state->append_component(std::move(component));
+                    }
                     ++state->writes;
                     ++writes_realized;
                     update_norm_sum += update_norm;
@@ -1185,8 +1933,18 @@ json server_sidecar_manager::observe_captured_sequence(
                 {"update_norm", update_norm},
                 {"source", source},
                 {"sha256_before", event_hash_before},
-                {"sha256_after", state->state_hash()},
+                {"sha256_after", per_event_hash ? state->state_hash() : "deferred_prototype_hash"},
                 {"components", state->components.size()},
+                {"allocated_prototypes", state->prototypes.size()},
+                {"active_prototypes", state->active_prototype_count()},
+                {"prototype_index", updated && state->is_prototype_backend() ?
+                    static_cast<int64_t>(prototype_result.index) : -1},
+                {"prototype_similarity", updated && state->is_prototype_backend() ?
+                    prototype_result.similarity : 0.0},
+                {"prototype_created", updated && state->is_prototype_backend() &&
+                    prototype_result.created},
+                {"forced_merge", updated && state->is_prototype_backend() &&
+                    prototype_result.forced_merge},
                 {"count_total", counts.total},
                 {"count_matching", counts.matching},
             };
@@ -1201,6 +1959,15 @@ json server_sidecar_manager::observe_captured_sequence(
         state->writer_counts = writer_counts_before;
         state->state_hash_context = hash_context_before;
         state->writes = writes_before;
+        if (state->is_prototype_backend()) {
+            state->prototypes = prototypes_before;
+            state->lifetime_merges = lifetime_merges_before;
+            state->forced_merges = forced_merges_before;
+            state->total_created_prototypes = created_prototypes_before;
+            state->experiences_absorbed = experiences_absorbed_before;
+            state->prototype_hash_dirty = prototype_hash_dirty_before;
+            state->prototype_hash_cache = prototype_hash_cache_before;
+        }
         state->retrievals = retrievals_before;
         state->sum_b = sum_b_before;
         state->max_b = max_b_before;
@@ -1221,6 +1988,12 @@ json server_sidecar_manager::observe_captured_sequence(
         {"components_added", state->components.size() - components_before},
         {"components_before", components_before},
         {"components_after", state->components.size()},
+        {"memory_backend", state->memory_backend},
+        {"allocated_prototypes", state->prototypes.size()},
+        {"active_prototypes", state->active_prototype_count()},
+        {"prototypes_created", state->total_created_prototypes - created_prototypes_before},
+        {"prototype_merges", state->lifetime_merges - lifetime_merges_before},
+        {"forced_merges", state->forced_merges - forced_merges_before},
         {"mean_gate", gate_sum / double(events.size())},
         {"mean_update_norm", writes_realized == 0 ? 0.0 : update_norm_sum / double(writes_realized)},
         {"updated", writes_realized > 0},
@@ -1437,9 +2210,17 @@ bool server_sidecar_manager::prepare_runtime_step(
         std::string * episode_id,
         llama_token baseline_greedy,
         server_sidecar_runtime_step & step,
-        std::string & error) {
+        std::string & error,
+        int32_t forced_prototype_id,
+        bool force_native_current,
+        const std::vector<float> * forced_direction) {
     if (query == nullptr) {
         error = "sidecar query is unavailable";
+        return false;
+    }
+    if (forced_direction != nullptr &&
+            (forced_prototype_id >= 0 || force_native_current)) {
+        error = "direct-vector forcing cannot be combined with prototype forcing";
         return false;
     }
     std::lock_guard<std::mutex> lock(mutex);
@@ -1457,23 +2238,63 @@ bool server_sidecar_manager::prepare_runtime_step(
     double raw_norm = 0.0;
     double budget = 0.0;
     std::string source;
-    const std::vector<float> response = state->retrieve(query, raw_norm, budget, source);
+    std::vector<float> response;
+    if (forced_direction != nullptr) {
+        if (forced_direction->size() != size_t(width)) {
+            error = "direct-vector forcing width does not match model width";
+            return false;
+        }
+        response = *forced_direction;
+        for (const float value : response) {
+            if (!std::isfinite(value)) {
+                error = "direct-vector forcing contains a non-finite value";
+                return false;
+            }
+        }
+        raw_norm = vector_norm(response);
+        budget = server_sidecar_authority_controller::budget(raw_norm);
+        source = "direct_vector";
+    } else {
+        const std::vector<float> normal_response = state->retrieve(query, raw_norm, budget, source);
+        response = normal_response;
+    }
+    if (forced_direction == nullptr && !force_native_current && forced_prototype_id >= 0) {
+        double forced_raw_norm = 0.0;
+        double forced_budget = 0.0;
+        std::string forced_source;
+        response = state->retrieve_forced(
+            query,
+            size_t(forced_prototype_id),
+            raw_norm,
+            forced_raw_norm,
+            forced_budget,
+            forced_source,
+            error);
+        if (response.empty()) {
+            if (error.empty()) {
+                error = "forced prototype retrieval returned no direction";
+            }
+            return false;
+        }
+        raw_norm = forced_raw_norm;
+        budget = forced_budget;
+        source = std::move(forced_source);
+    }
     ++state->retrievals;
     state->sum_b += budget;
     state->max_b = std::max(state->max_b, budget);
 
     if (episode_id != nullptr) {
-        if (!state->learning_enabled) {
-            episode_id->clear();
-        } else {
-            if (episode_id->empty()) {
-                *episode_id = id + "-episode-" + std::to_string(state->next_episode++);
-            }
-            state->episodes[*episode_id] = sidecar::episode{
-                std::vector<float>(query, query + width),
-                source, baseline_greedy, state->version,
-            };
+        if (episode_id->empty()) {
+            *episode_id = id + "-episode-" + std::to_string(state->next_episode++);
         }
+        // A debug-only frozen capture still needs a request-local episode so
+        // observe() can return the query.  observe() removes this record
+        // without mutating sidecar learning state when learning is disabled.
+        state->episodes[*episode_id] = sidecar::episode{
+            std::vector<float>(query, query + width),
+            source, baseline_greedy, state->version,
+        };
     }
 
     step.raw_norm = raw_norm;

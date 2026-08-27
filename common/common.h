@@ -674,8 +674,12 @@ struct common_params {
 
     std::string slot_save_path;
     std::string media_path; // path to directory for loading media files
-    std::string sidecar_dir; // optional root for sidecar_v1 packages; empty disables sidecars
+    std::string sidecar_dir; // optional root for sidecar packages; empty disables sidecars
     std::string sidecar_runtime = "fast"; // fast graph path or reference transaction path
+    std::string sidecar_memory = "raw"; // default backend for newly created sidecars
+    int32_t sidecar_prototypes = 256; // fixed prototype slots for the prototype backend
+    double sidecar_merge_threshold = 0.90;
+    int32_t sidecar_top_cluster_candidates = 10;
 
     float slot_prompt_similarity = 0.1f;
 

@@ -60,7 +60,13 @@ public:
             std::string & error);
 
     nlohmann::ordered_json status(const std::string & id) const;
-    nlohmann::ordered_json create(const std::string & id, bool learning_enabled);
+    nlohmann::ordered_json create(
+            const std::string & id,
+            bool learning_enabled,
+            const std::string & memory_backend = "raw",
+            int32_t configured_prototypes = 256,
+            double merge_threshold = 0.90,
+            int32_t top_cluster_candidates = 10);
     nlohmann::ordered_json clone(const std::string & source_id, const std::string & clone_id, bool learning_enabled);
     nlohmann::ordered_json load(const std::string & id, const std::string & path, bool learning_enabled);
     nlohmann::ordered_json save(const std::string & id, const std::string & path);
@@ -133,7 +139,10 @@ public:
             std::string * episode_id,
             llama_token baseline_greedy,
             server_sidecar_runtime_step & step,
-            std::string & error);
+            std::string & error,
+            int32_t forced_prototype_id = -1,
+            bool force_native_current = false,
+            const std::vector<float> * forced_direction = nullptr);
 
     bool apply_runtime_hidden(
             const std::string & id,

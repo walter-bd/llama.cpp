@@ -367,6 +367,20 @@ json server_task_result_cmpl_final::to_json_non_oaicompat() {
     if (!sidecar_experience_events.empty()) {
         res["sidecar_experience_events"] = sidecar_experience_events;
     }
+    if (!sidecar_response_hidden.empty()) {
+        res["sidecar_response_hidden"] = sidecar_response_hidden;
+    }
+    if (!sidecar_response_boundaries.empty()) {
+        json boundaries = json::array();
+        for (const auto & snapshot : sidecar_response_boundaries) {
+            json item = json::object();
+            for (const auto & [layer, values] : snapshot) {
+                item[std::to_string(layer)] = values;
+            }
+            boundaries.push_back(std::move(item));
+        }
+        res["sidecar_response_boundaries"] = std::move(boundaries);
+    }
     return response_fields.empty() ? res : json_get_nested_values(response_fields, res);
 }
 

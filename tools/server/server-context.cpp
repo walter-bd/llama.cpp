@@ -384,9 +384,43 @@ struct server_slot {
     std::unique_ptr<const server_task> task_prev; // used for debugging
     std::string sidecar_episode_id;
     std::vector<json> sidecar_experience_events;
+    std::vector<std::vector<float>> sidecar_response_hidden;
+    std::vector<std::map<int32_t, std::vector<float>>> sidecar_response_boundaries;
     std::string sidecar_ephemeral_id;
     llama_token sidecar_baseline_greedy = -1;
     size_t sidecar_debug_sham_index = 0;
+
+    const sidecar_forced_prototype_event * sidecar_forced_event_at(
+            int64_t token_index) const {
+        if (!task) {
+            return nullptr;
+        }
+        for (const auto & event : task->params.sidecar_forced_prototype_events) {
+            if (event.token_index == token_index) {
+                return &event;
+            }
+            if (event.token_index > token_index) {
+                break;
+            }
+        }
+        return nullptr;
+    }
+
+    const sidecar_forced_vector_event * sidecar_forced_vector_event_at(
+            int64_t token_index) const {
+        if (!task) {
+            return nullptr;
+        }
+        for (const auto & event : task->params.sidecar_forced_vector_events) {
+            if (event.token_index == token_index) {
+                return &event;
+            }
+            if (event.token_index > token_index) {
+                break;
+            }
+        }
+        return nullptr;
+    }
 
     // used to determine the slot that has been used the longest
     int64_t t_last_used = -1;
@@ -530,6 +564,8 @@ struct server_slot {
         task.reset();
         sidecar_episode_id.clear();
         sidecar_experience_events.clear();
+        sidecar_response_hidden.clear();
+        sidecar_response_boundaries.clear();
         sidecar_ephemeral_id.clear();
         sidecar_baseline_greedy = -1;
         sidecar_debug_sham_index = 0;
@@ -592,7 +628,9 @@ struct server_slot {
     bool can_batch_with(server_slot & other_slot) const {
         GGML_ASSERT(task);
 
-        if (!task->params.sidecar_id.empty() || !other_slot.task->params.sidecar_id.empty()) {
+        if (!task->params.sidecar_id.empty() || !other_slot.task->params.sidecar_id.empty() ||
+                task->params.sidecar_response_capture ||
+                other_slot.task->params.sidecar_response_capture) {
             return false;
         }
 
@@ -2373,6 +2411,8 @@ private:
         res->generation_params = slot.task->params; // copy the parameters
         res->sidecar_episode_id = slot.sidecar_episode_id;
         res->sidecar_experience_events = slot.sidecar_experience_events;
+        res->sidecar_response_hidden = std::move(slot.sidecar_response_hidden);
+        res->sidecar_response_boundaries = std::move(slot.sidecar_response_boundaries);
 
         queue_results.send(std::move(res));
     }
@@ -3276,7 +3316,8 @@ private:
             // ordinary GGUF and residual-only paths keep their existing graph
             // and output behavior.
             const bool sidecar_embeddings = slot_batched->task != nullptr &&
-                !slot_batched->task->params.sidecar_id.empty();
+                (!slot_batched->task->params.sidecar_id.empty() ||
+                 slot_batched->task->params.sidecar_response_capture);
             llama_set_embeddings(ctx_tgt, slot_batched->need_embd() || sidecar_embeddings);
         }
 
@@ -3947,7 +3988,8 @@ private:
                         // token. Keep it in its own batch for sidecar requests
                         // so the same transactional prepass/replay path also
                         // covers the first generated token.
-                        if (!slot.task->params.sidecar_id.empty() &&
+                        if ((!slot.task->params.sidecar_id.empty() ||
+                             slot.task->params.sidecar_response_capture) &&
                                 slot.prompt.n_tokens() + 1 == slot.task->n_tokens() &&
                                 batch.size() > n_tokens_prev) {
                             break;
@@ -4072,7 +4114,8 @@ private:
         for (auto & slot : slots) {
             if (slot.task == nullptr ||
                     (slot.state != SLOT_STATE_GENERATING && slot.state != SLOT_STATE_DONE_PROMPT) ||
-                    slot.task->params.sidecar_id.empty()) {
+                    slot.task->params.sidecar_id.empty() ||
+                    (slot.task->params.sidecar_response_capture && slot.stats.n_gen > 0)) {
                 continue;
             }
             if (slot.i_batch < off || slot.i_batch >= off + batch_view.n_tokens) {
@@ -4080,6 +4123,25 @@ private:
             }
             if (result != nullptr) {
                 throw std::runtime_error("multiple sidecar slots entered one decode batch");
+            }
+            result = &slot;
+        }
+        return result;
+    }
+
+    server_slot * response_trace_slot_for_batch(int32_t off, const llama_batch & batch_view) {
+        server_slot * result = nullptr;
+        for (auto & slot : slots) {
+            if (slot.task == nullptr ||
+                    (slot.state != SLOT_STATE_GENERATING && slot.state != SLOT_STATE_DONE_PROMPT) ||
+                    !slot.task->params.sidecar_response_capture) {
+                continue;
+            }
+            if (slot.i_batch < off || slot.i_batch >= off + batch_view.n_tokens) {
+                continue;
+            }
+            if (result != nullptr) {
+                throw std::runtime_error("multiple response-capture slots entered one decode batch");
             }
             result = &slot;
         }
@@ -4126,9 +4188,10 @@ private:
             server_sidecar_runtime_step step;
             std::string episode_id = slot.sidecar_episode_id;
             const bool capture_episode =
-                slot.task->params.sidecar_capture_episode ||
+                !slot.task->params.sidecar_response_capture &&
+                (slot.task->params.sidecar_capture_episode ||
                 !slot.task->params.sidecar_observed_tokens.empty() ||
-                slot.task->params.sidecar_debug_internal_plasticity;
+                slot.task->params.sidecar_debug_internal_plasticity);
             std::string error;
             std::vector<float> query;
             if (!sidecars.capture_query(sidecar_id, ctx_tgt, 0, width, query, error)) {
@@ -4151,11 +4214,44 @@ private:
                     baseline_greedy = token;
                 }
             }
+            const auto * forced_event = slot.sidecar_forced_event_at(slot.stats.n_gen);
+            const auto * forced_vector_event =
+                slot.sidecar_forced_vector_event_at(slot.stats.n_gen);
+            if (forced_event != nullptr && forced_vector_event != nullptr) {
+                throw std::runtime_error(
+                    "prototype and direct-vector sidecar events overlap at one token index");
+            }
             if (!sidecars.prepare_runtime_step(
                         sidecar_id, query.data(), width,
                         capture_episode ? &episode_id : nullptr,
-                        baseline_greedy, step, error)) {
+                        baseline_greedy, step, error,
+                        forced_event != nullptr && !forced_event->native_current ?
+                            forced_event->prototype_id : -1,
+                        forced_event != nullptr && forced_event->native_current,
+                        forced_vector_event != nullptr ?
+                            &forced_vector_event->direction : nullptr)) {
                 throw std::runtime_error(error);
+            }
+            if (forced_event != nullptr) {
+                slot.sidecar_experience_events.push_back(json{
+                    {"event_type", "forced_prototype_read"},
+                    {"forced", !forced_event->native_current},
+                    {"native_current", forced_event->native_current},
+                    {"token_index", slot.stats.n_gen},
+                    {"requested_prototype_id", forced_event->native_current ? -1 : forced_event->prototype_id},
+                    {"raw_norm", step.raw_norm},
+                    {"budget", step.budget},
+                    {"source", step.source},
+                });
+            }
+            if (forced_vector_event != nullptr) {
+                slot.sidecar_experience_events.push_back(json{
+                    {"event_type", "forced_vector_read"},
+                    {"token_index", slot.stats.n_gen},
+                    {"raw_norm", step.raw_norm},
+                    {"budget", step.budget},
+                    {"source", step.source},
+                });
             }
             slot.sidecar_episode_id = std::move(episode_id);
             slot.sidecar_baseline_greedy = baseline_greedy;
@@ -4257,9 +4353,10 @@ private:
             server_sidecar_runtime_step step;
             std::string episode_id = slot.sidecar_episode_id;
             const bool capture_episode =
-                slot.task->params.sidecar_capture_episode ||
+                !slot.task->params.sidecar_response_capture &&
+                (slot.task->params.sidecar_capture_episode ||
                 !slot.task->params.sidecar_observed_tokens.empty() ||
-                slot.task->params.sidecar_debug_internal_plasticity;
+                slot.task->params.sidecar_debug_internal_plasticity);
             std::string error;
             std::vector<float> query;
             if (!sidecars.capture_query(
@@ -4282,11 +4379,44 @@ private:
                     baseline_greedy = token;
                 }
             }
+            const auto * forced_event = slot.sidecar_forced_event_at(slot.stats.n_gen);
+            const auto * forced_vector_event =
+                slot.sidecar_forced_vector_event_at(slot.stats.n_gen);
+            if (forced_event != nullptr && forced_vector_event != nullptr) {
+                throw std::runtime_error(
+                    "prototype and direct-vector sidecar events overlap at one token index");
+            }
             if (!sidecars.prepare_runtime_step(
                         sidecar_id, query.data(), width,
                         capture_episode ? &episode_id : nullptr,
-                        baseline_greedy, step, error)) {
+                        baseline_greedy, step, error,
+                        forced_event != nullptr && !forced_event->native_current ?
+                            forced_event->prototype_id : -1,
+                        forced_event != nullptr && forced_event->native_current,
+                        forced_vector_event != nullptr ?
+                            &forced_vector_event->direction : nullptr)) {
                 throw std::runtime_error(error);
+            }
+            if (forced_event != nullptr) {
+                slot.sidecar_experience_events.push_back(json{
+                    {"event_type", "forced_prototype_read"},
+                    {"forced", !forced_event->native_current},
+                    {"native_current", forced_event->native_current},
+                    {"token_index", slot.stats.n_gen},
+                    {"requested_prototype_id", forced_event->native_current ? -1 : forced_event->prototype_id},
+                    {"raw_norm", step.raw_norm},
+                    {"budget", step.budget},
+                    {"source", step.source},
+                });
+            }
+            if (forced_vector_event != nullptr) {
+                slot.sidecar_experience_events.push_back(json{
+                    {"event_type", "forced_vector_read"},
+                    {"token_index", slot.stats.n_gen},
+                    {"raw_norm", step.raw_norm},
+                    {"budget", step.budget},
+                    {"source", step.source},
+                });
             }
             slot.sidecar_episode_id = std::move(episode_id);
             slot.sidecar_baseline_greedy = baseline_greedy;
@@ -4499,6 +4629,11 @@ private:
         // committed replay. The fast path runs that prepass on a private
         // sequence; the reference path retains the serialized transaction.
         server_slot * sidecar_slot = sidecar_slot_for_batch(off, batch_view);
+        server_slot * response_trace_slot = response_trace_slot_for_batch(off, batch_view);
+        if (sidecar_slot != nullptr && response_trace_slot != nullptr &&
+                sidecar_slot != response_trace_slot) {
+            throw std::runtime_error("sidecar and response-capture slots entered one decode batch");
+        }
         llama_seq_id sidecar_original_seq = -1;
         if (sidecar_slot != nullptr) {
             if (batch_view.n_tokens != 1 || batch_view.n_seq_id[0] != 1) {
@@ -4509,7 +4644,9 @@ private:
             sidecar_trace.enabled = true;
             if (params_base.sidecar_runtime == "fast") {
                 sidecars.clear_runtime_step30(ctx_tgt);
-                sidecar_trace.capture_boundaries = false;
+                sidecar_trace.capture_boundaries =
+                    sidecar_slot->task->params.sidecar_response_capture ||
+                    params_base.sidecar_runtime == "reference";
                 sidecar_original_seq = batch_view.seq_id[0][0];
                 const llama_seq_id scratch_seq = params_base.n_parallel;
 
@@ -4532,6 +4669,13 @@ private:
                     throw std::runtime_error("failed to begin sidecar runtime transaction");
                 }
             }
+        } else if (response_trace_slot != nullptr) {
+            if (batch_view.n_tokens != 1 || batch_view.n_seq_id[0] != 1) {
+                throw std::runtime_error("response capture requires an exclusive single-token batch");
+            }
+            sidecar_trace.clear();
+            sidecar_trace.enabled = true;
+            sidecar_trace.capture_boundaries = true;
         }
 
         // yield to the queue, so we can still handle metrics tasks while decoding
@@ -4562,6 +4706,11 @@ private:
                     llama_state_transaction_free(sidecar_slot->sidecar_transaction);
                     sidecar_slot->sidecar_transaction = nullptr;
                 }
+            }
+        } else if (response_trace_slot != nullptr) {
+            sidecar_trace.enabled = false;
+            if (ret != 0) {
+                sidecar_trace.clear();
             }
         }
 
@@ -4727,10 +4876,33 @@ private:
                 return; // sample using speculative decoding
             }
 
+            const bool has_response_capture = slot.task->params.sidecar_response_capture;
+            if (has_response_capture) {
+                const int32_t width = llama_model_n_embd(model_tgt);
+                if (static_cast<int32_t>(sidecar_trace.final_hidden.size()) != width) {
+                    throw std::runtime_error("response capture did not produce result_norm");
+                }
+                slot.sidecar_response_hidden.push_back(sidecar_trace.final_hidden);
+                std::map<int32_t, std::vector<float>> boundaries;
+                for (const int32_t layer : { 23, 27 }) {
+                    const auto it = sidecar_trace.boundaries.find(layer);
+                    if (it == sidecar_trace.boundaries.end() ||
+                            static_cast<int32_t>(it->second.size()) != width) {
+                        throw std::runtime_error(
+                            "response capture did not produce validated internal boundary " +
+                            std::to_string(layer));
+                    }
+                    boundaries.emplace(layer, it->second);
+                }
+                slot.sidecar_response_boundaries.push_back(std::move(boundaries));
+            }
+
             if (slot.sidecar_fast_transaction) {
                 execute_sidecar_runtime_fast(slot, batch_view);
             } else if (slot.sidecar_transaction != nullptr) {
                 execute_sidecar_runtime(slot, batch_view);
+            } else if (has_response_capture) {
+                sidecar_trace.clear();
             }
 
             // shifted according to the current sub-batch
@@ -5337,6 +5509,120 @@ std::unique_ptr<server_res_generator> server_routes::handle_completions_impl(
             }
         }
 
+        const bool has_forced_prototype_events =
+            data.contains("sidecar_forced_prototype_events");
+        const bool has_forced_vector_events =
+            data.contains("sidecar_forced_vector_events");
+        if (has_forced_prototype_events && has_forced_vector_events) {
+            throw std::invalid_argument(
+                "sidecar_forced_prototype_events and sidecar_forced_vector_events cannot be combined");
+        }
+        std::vector<sidecar_forced_prototype_event> forced_prototype_events;
+        if (has_forced_prototype_events) {
+            if (res_type != TASK_RESPONSE_TYPE_NONE) {
+                throw std::invalid_argument(
+                    "sidecar_forced_prototype_events is supported only by native /completion");
+            }
+            const auto & forced = data.at("sidecar_forced_prototype_events");
+            if (!forced.is_array()) {
+                throw std::invalid_argument(
+                    "sidecar_forced_prototype_events must be an array");
+            }
+            forced_prototype_events.reserve(forced.size());
+            int64_t previous_token_index = -1;
+            for (const auto & value : forced) {
+                if (!value.is_object() ||
+                        !value.contains("token_index") ||
+                        !value.at("token_index").is_number_integer()) {
+                    throw std::invalid_argument(
+                        "invalid sidecar_forced_prototype_events entry");
+                }
+                sidecar_forced_prototype_event event;
+                event.token_index = value.at("token_index").get<int64_t>();
+                if (event.token_index < 0 || event.token_index <= previous_token_index) {
+                    throw std::invalid_argument(
+                        "sidecar_forced_prototype_events token_index values must be nonnegative and strictly increasing");
+                }
+                const std::string mode = value.value("mode", "single");
+                if (mode == "native_current") {
+                    if (value.contains("prototype_id")) {
+                        throw std::invalid_argument(
+                            "native_current forced events must not include prototype_id");
+                    }
+                    event.native_current = true;
+                } else if (mode == "single") {
+                    if (!value.contains("prototype_id") ||
+                            !value.at("prototype_id").is_number_integer()) {
+                        throw std::invalid_argument(
+                            "single forced prototype events require prototype_id");
+                    }
+                    const int64_t prototype_id = value.at("prototype_id").get<int64_t>();
+                    if (prototype_id < 0 || prototype_id > INT32_MAX) {
+                        throw std::invalid_argument(
+                            "forced prototype_id is out of range");
+                    }
+                    event.prototype_id = static_cast<int32_t>(prototype_id);
+                } else {
+                    throw std::invalid_argument(
+                        "sidecar_forced_prototype_events mode must be single or native_current");
+                }
+                previous_token_index = event.token_index;
+                forced_prototype_events.push_back(std::move(event));
+            }
+        }
+
+        std::vector<sidecar_forced_vector_event> forced_vector_events;
+        if (has_forced_vector_events) {
+            if (res_type != TASK_RESPONSE_TYPE_NONE) {
+                throw std::invalid_argument(
+                    "sidecar_forced_vector_events is supported only by native /completion");
+            }
+            const auto & forced = data.at("sidecar_forced_vector_events");
+            if (!forced.is_array()) {
+                throw std::invalid_argument(
+                    "sidecar_forced_vector_events must be an array");
+            }
+            const int32_t model_width = llama_model_n_embd(ctx_server.model_tgt);
+            forced_vector_events.reserve(forced.size());
+            int64_t previous_token_index = -1;
+            for (const auto & value : forced) {
+                if (!value.is_object() ||
+                        !value.contains("token_index") ||
+                        !value.at("token_index").is_number_integer() ||
+                        !value.contains("direction") ||
+                        !value.at("direction").is_array()) {
+                    throw std::invalid_argument(
+                        "invalid sidecar_forced_vector_events entry");
+                }
+                sidecar_forced_vector_event event;
+                event.token_index = value.at("token_index").get<int64_t>();
+                if (event.token_index < 0 || event.token_index <= previous_token_index) {
+                    throw std::invalid_argument(
+                        "sidecar_forced_vector_events token_index values must be nonnegative and strictly increasing");
+                }
+                const auto & direction = value.at("direction");
+                if (direction.size() != size_t(model_width)) {
+                    throw std::invalid_argument(
+                        "sidecar_forced_vector_events direction width does not match model width");
+                }
+                event.direction.reserve(direction.size());
+                for (const auto & component : direction) {
+                    if (!component.is_number()) {
+                        throw std::invalid_argument(
+                            "sidecar_forced_vector_events direction must contain numbers");
+                    }
+                    const float converted = component.get<float>();
+                    if (!std::isfinite(converted)) {
+                        throw std::invalid_argument(
+                            "sidecar_forced_vector_events direction must be finite");
+                    }
+                    event.direction.push_back(converted);
+                }
+                previous_token_index = event.token_index;
+                forced_vector_events.push_back(std::move(event));
+            }
+        }
+
         // tasks.reserve(inputs.size()); // TODO: this is inaccurate due to child tasks
 
         // message delimiters for checkpointing
@@ -5358,12 +5644,30 @@ std::unique_ptr<server_res_generator> server_routes::handle_completions_impl(
             task.params.sidecar_id = json_value(data, "sidecar_id", std::string());
             task.params.sidecar_capture_episode = json_value(
                 data, "sidecar_capture_episode", false);
+            task.params.sidecar_response_capture = json_value(
+                data, "sidecar_response_capture", false);
             task.params.sidecar_debug_internal_plasticity = json_value(
                 data, "sidecar_debug_internal_plasticity", false);
             task.params.sidecar_debug_capture_write_directions = json_value(
                 data, "sidecar_debug_capture_write_directions", false);
             task.params.sidecar_debug_sham = json_value(
                 data, "sidecar_debug_sham", false);
+            if (has_forced_prototype_events) {
+                task.params.sidecar_forced_prototype_events = forced_prototype_events;
+                task.params.cache_prompt = false;
+                if (task.params.sidecar_id.empty()) {
+                    throw std::invalid_argument(
+                        "sidecar_forced_prototype_events requires sidecar_id");
+                }
+            }
+            if (has_forced_vector_events) {
+                task.params.sidecar_forced_vector_events = forced_vector_events;
+                task.params.cache_prompt = false;
+                if (task.params.sidecar_id.empty()) {
+                    throw std::invalid_argument(
+                        "sidecar_forced_vector_events requires sidecar_id");
+                }
+            }
             if (task.params.sidecar_debug_sham && !task.params.sidecar_debug_internal_plasticity) {
                 throw std::invalid_argument("sidecar_debug_sham requires sidecar_debug_internal_plasticity");
             }
@@ -5411,9 +5715,17 @@ std::unique_ptr<server_res_generator> server_routes::handle_completions_impl(
                 task.params.sidecar_observed_tokens = observed_tokens;
                 task.params.n_predict = static_cast<int32_t>(observed_tokens.size());
                 task.params.cache_prompt = false;
-                if (task.params.sidecar_id.empty()) {
+                if (task.params.sidecar_id.empty() &&
+                        !task.params.sidecar_response_capture) {
                     throw std::invalid_argument("sidecar_observed_tokens requires sidecar_id");
                 }
+            }
+            if (task.params.sidecar_response_capture) {
+                if (res_type != TASK_RESPONSE_TYPE_NONE) {
+                    throw std::invalid_argument(
+                        "sidecar_response_capture is supported only by native /completion");
+                }
+                task.params.cache_prompt = false;
             }
             if (!task.params.sidecar_id.empty()) {
                 const bool speculative = std::any_of(
@@ -5709,7 +6021,11 @@ void server_routes::init_routes() {
             const json body = sidecar_body(req);
             return sidecar_response(ctx_server.sidecars.create(
                 required_sidecar_id(body),
-                json_value(body, "learning_enabled", false)));
+                json_value(body, "learning_enabled", false),
+                json_value(body, "memory_backend", params.sidecar_memory),
+                json_value(body, "configured_prototypes", params.sidecar_prototypes),
+                json_value(body, "merge_threshold", params.sidecar_merge_threshold),
+                json_value(body, "top_cluster_candidates", params.sidecar_top_cluster_candidates)));
         } catch (const std::exception & e) {
             return sidecar_error(e.what());
         }

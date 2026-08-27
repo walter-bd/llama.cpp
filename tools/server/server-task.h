@@ -61,6 +61,23 @@ struct sidecar_debug_sham_event {
     int64_t source_event_index = -1;
 };
 
+// Research-only, request-local prototype selection.  A native-current event
+// is an explicit control that exercises the override plumbing while retaining
+// the ordinary aggregate Top-K reader; otherwise prototype_id selects one
+// active prototype for this retrieval event.  Neither form mutates the bank.
+struct sidecar_forced_prototype_event {
+    int64_t token_index = -1;
+    int32_t prototype_id = -1;
+    bool native_current = false;
+};
+
+// Research-only, request-local direct-vector forcing. The vector is transient
+// request data and is never written to the sidecar bank.
+struct sidecar_forced_vector_event {
+    int64_t token_index = -1;
+    std::vector<float> direction;
+};
+
 struct task_params {
     bool stream          = false;
     bool include_usage   = false;
@@ -76,6 +93,11 @@ struct task_params {
     // Selecting a sidecar for ordinary chat is read-only by default.
     bool sidecar_capture_episode = false;
 
+    // Research-only response capture. When enabled, the native completion
+    // result contains the final result_norm vector for each decoded token.
+    // This is transient request data and never changes the sidecar package.
+    bool sidecar_response_capture = false;
+
     // Experimental native experience path. The server consumes this
     // already-tokenized sequence in one slot, preserving per-token
     // transaction semantics without one HTTP request per token.
@@ -87,6 +109,10 @@ struct task_params {
     bool sidecar_debug_capture_write_directions = false;
     bool sidecar_debug_sham = false;
     std::vector<sidecar_debug_sham_event> sidecar_debug_sham_events;
+
+    // Sorted by token_index; only the matching generation event is consumed.
+    std::vector<sidecar_forced_prototype_event> sidecar_forced_prototype_events;
+    std::vector<sidecar_forced_vector_event> sidecar_forced_vector_events;
 
     int32_t sse_ping_interval = 30; // seconds between SSE comment pings while the stream stays silent, -1 disables
 
@@ -394,6 +420,9 @@ struct server_task_result_cmpl_final : server_task_result {
     common_chat_msg    oaicompat_msg; // to be populated by update()
     std::string        sidecar_episode_id;
     std::vector<json>   sidecar_experience_events;
+    std::vector<std::vector<float>> sidecar_response_hidden;
+    // Research-only hidden-state snapshots at validated internal interfaces.
+    std::vector<std::map<int32_t, std::vector<float>>> sidecar_response_boundaries;
 
     std::vector<common_chat_msg_diff> oaicompat_msg_diffs; // to be populated by update()
     bool is_updated = false;
